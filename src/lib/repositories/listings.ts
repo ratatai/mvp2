@@ -587,7 +587,7 @@ export async function fetchPublicSlugs(): Promise<
 > {
   try {
     const supabase = await getClient();
-  if (supabase === null) return { ok: false, error: 'unavailable' };
+    if (supabase === null) return [];
 
     const { data, error } = await supabase
       .from('listings')

@@ -127,7 +127,15 @@ export interface Database {
           position?: number;
           is_primary?: boolean;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'listing_images_listing_id_fkey';
+            columns: ['listing_id'];
+            isOneToOne: false;
+            referencedRelation: 'listings';
+            referencedColumns: ['id'];
+          },
+        ];
       };
     };
     Views: {
@@ -138,6 +146,7 @@ export interface Database {
           city: string | null;
           phone: string | null;
         };
+        Relationships: [];
       };
     };
     Functions: Record<never, never>;
