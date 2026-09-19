@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    /* The catalog grid and wide spec tables must never push the page sideways. */
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display font-extrabold leading-tight tracking-tight;
+  }
+
+  /* A visible, high-contrast focus ring everywhere, for keyboard users. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-bg;
+  }
+
+  /* Respect the visitor's motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-shell px-4 sm:px-5;
+  }
+
+  .btn {
+    @apply inline-flex min-h-touch items-center justify-center gap-2 rounded-xl
+           px-5 py-3 font-display text-base font-bold transition
+           disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand text-white shadow-brand hover:bg-brand-dark;
+  }
+
+  .btn-ghost {
+    @apply btn border border-line bg-white/5 text-ink hover:border-line-strong hover:bg-white/10;
+  }
+
+  .btn-quiet {
+    @apply btn px-3 text-ink-muted hover:text-ink;
+  }
+
+  .card {
+    @apply rounded-brand border border-line bg-card transition;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium text-ink-muted;
+  }
+
+  .field {
+    @apply min-h-touch w-full rounded-xl border border-line bg-bg-alt px-3.5 py-2.5
+           text-base text-ink placeholder:text-ink-faint
+           focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand;
+  }
+
+  .field-error {
+    @apply mt-1.5 text-sm text-brand;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line
+           bg-white/5 px-3 py-1 text-xs font-medium text-ink-muted;
+  }
+
+  .eyebrow {
+    @apply font-display text-xs font-bold uppercase tracking-[0.18em] text-brand;
+  }
+}
+
+@layer utilities {
+  /* Visible only to screen readers, until focused. */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100]
+           focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-white;
+  }
+}
