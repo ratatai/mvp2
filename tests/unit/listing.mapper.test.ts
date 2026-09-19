@@ -377,6 +377,58 @@ describe('rowToListing', () => {
       expect('centerBore' in specs.rim).toBe(false);
       expect('offset' in specs.rim).toBe(false);
       expect(specs.tire.aspect_ratio).toBe(45);
+      expect(specs.tire.season).toBe('summer');
+    }
+  });
+
+  it('maps a legacy season value on a flat tire row', () => {
+    const result = rowToListing(
+      makeRow({
+        specs: {
+          brand: 'Michelin',
+          width: 205,
+          aspect_ratio: 55,
+          diameter: 16,
+          season: 'žiema',
+        },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.listing.category === 'padangos') {
+      expect(result.listing.specs.season).toBe('winter');
+    }
+  });
+
+  it('still rejects a legacy row whose season is not a known legacy value', () => {
+    const row = makeRow({
+      category: 'ratai',
+      specs: {
+        rim: {
+          brand: 'BBS',
+          diameter: 18,
+          rimWidth: 8.5,
+          boltCount: 5,
+          pcd: '5x112',
+          centerBore: 66.6,
+          offset: 35,
+          material: 'alloy',
+        },
+        tire: {
+          brand: 'Michelin',
+          width: 225,
+          aspectRatio: 45,
+          diameter: 18,
+          season: 'ruduo',
+        },
+      },
+    });
+
+    const result = rowToListing(row);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain('tire.season');
     }
   });
 

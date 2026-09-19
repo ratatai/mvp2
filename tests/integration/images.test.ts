@@ -519,9 +519,12 @@ describe('setPrimaryImage', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('reorderImages', () => {
-  it('rewrites positions from the given sequence', async () => {
+  it('rewrites positions, then moves the primary to the first image', async () => {
     const fake = install({
-      responses: { listings: [OWNED], listing_images: [{}, {}, {}] },
+      responses: {
+        listings: [OWNED],
+        listing_images: [{ count: 1 }, { count: 1 }, { count: 1 }, {}, {}],
+      },
     });
 
     const result = await reorderImages(TEST_LISTING_ID, TEST_USER_ID, [
@@ -532,8 +535,9 @@ describe('reorderImages', () => {
 
     expect(result.ok).toBe(true);
 
+    // One position update per image, then clear-primary and set-primary.
     const queries = fake.queriesFor('listing_images');
-    expect(queries).toHaveLength(3);
+    expect(queries).toHaveLength(5);
 
     const expected = [
       ['img-c', 0],
@@ -548,6 +552,70 @@ describe('reorderImages', () => {
       // Scoped to the listing, so an id from another listing cannot be moved.
       expect(hasEq(query, 'listing_id', TEST_LISTING_ID)).toBe(true);
     });
+
+    // The old primary is cleared before the new one is set, so the partial
+    // unique index never sees two primary rows for the listing.
+    const clear = at(queries, 3);
+    expect(at(callsOf(clear, 'update'), 0).args[0]).toEqual({ is_primary: false });
+    expect(hasEq(clear, 'listing_id', TEST_LISTING_ID)).toBe(true);
+    expect(hasEq(clear, 'is_primary', true)).toBe(true);
+
+    const set = at(queries, 4);
+    expect(at(callsOf(set, 'update'), 0).args[0]).toEqual({ is_primary: true });
+    expect(hasEq(set, 'id', 'img-c')).toBe(true);
+    expect(hasEq(set, 'listing_id', TEST_LISTING_ID)).toBe(true);
+  });
+
+  it('leaves the primary untouched when an id is not in the listing', async () => {
+    const fake = install({
+      responses: {
+        listings: [OWNED],
+        listing_images: [{ count: 1 }, { count: 0 }],
+      },
+    });
+
+    const result = await reorderImages(TEST_LISTING_ID, TEST_USER_ID, [
+      'img-a',
+      'img-stale',
+      'img-b',
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe('not_found');
+
+    const queries = fake.queriesFor('listing_images');
+    expect(queries).toHaveLength(2);
+
+    const touchesPrimary = queries.some((query) =>
+      callsOf(query, 'update').some((call) => 'is_primary' in Object(call.args[0]))
+    );
+    expect(touchesPrimary).toBe(false);
+  });
+
+  it('never sets a new primary when clearing the old one fails', async () => {
+    const fake = install({
+      responses: {
+        listings: [OWNED],
+        listing_images: [
+          { count: 1 },
+          { count: 1 },
+          { error: pgError('08006', 'connection failure') },
+        ],
+      },
+    });
+
+    const result = await reorderImages(TEST_LISTING_ID, TEST_USER_ID, [
+      'img-b',
+      'img-a',
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe('unavailable');
+
+    // Two position updates and the failed clear — no set-primary afterwards.
+    expect(fake.queriesFor('listing_images')).toHaveLength(3);
   });
 
   it('rejects a sequence longer than the image limit', async () => {

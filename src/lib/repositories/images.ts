@@ -271,9 +271,9 @@ export async function reorderImages(
   }
 
   for (const [index, id] of orderedIds.entries()) {
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from('listing_images')
-      .update({ position: index })
+      .update({ position: index }, { count: 'exact' })
       .eq('id', id)
       .eq('listing_id', listingId);
 
@@ -281,6 +281,11 @@ export async function reorderImages(
       logImageIssue('reorderImages', error);
       return { ok: false, error: 'unavailable' };
     }
+
+    // An id outside this listing (e.g. a stale, already deleted photo) must
+    // stop here: clearing the primary below and then setting it on an id that
+    // matches nothing would leave the listing without any primary image.
+    if (count === 0) return { ok: false, error: 'not_found' };
   }
 
   const first = orderedIds[0];

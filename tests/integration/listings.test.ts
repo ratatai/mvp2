@@ -65,6 +65,7 @@ import {
   fetchOwnedListingById,
   fetchOwnerListings,
   fetchPublicListings,
+  fetchPublicSlugs,
   setListingStatus,
   specPath,
   updateListing,
@@ -1137,5 +1138,54 @@ describe('deleteListing', () => {
     const result = await deleteListing(TEST_LISTING_ID, TEST_USER_ID);
 
     expectSafeFailure(result);
+  });
+});
+
+describe('fetchPublicSlugs', () => {
+  /** The sitemap iterates the result, so it must always be a plain array. */
+  function expectEmptyArray(result: unknown): void {
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).not.toHaveProperty('ok');
+    expect(result).toEqual([]);
+  }
+
+  it('returns [] when the Supabase client cannot be created', async () => {
+    holder.createClient = () =>
+      Promise.reject(new Error('Missing environment variable'));
+
+    expectEmptyArray(await fetchPublicSlugs());
+  });
+
+  it('returns [] when the query fails', async () => {
+    install({
+      responses: { listings: [{ error: pgError('08006', DB_LEAK) }] },
+    });
+
+    expectEmptyArray(await fetchPublicSlugs());
+  });
+
+  it('returns [] when the query yields no data', async () => {
+    install({ responses: { listings: [{ data: null }] } });
+
+    expectEmptyArray(await fetchPublicSlugs());
+  });
+
+  it('returns slug and updated_at of public listings only', async () => {
+    const rows = [
+      { slug: 'michelin-205-55-r16-aaaa1111', updated_at: '2024-05-02T10:00:00.000Z' },
+      { slug: 'bbs-18-5x112-bbbb2222', updated_at: '2024-05-01T10:00:00.000Z' },
+    ];
+    const fake = install({ responses: { listings: [{ data: rows }] } });
+
+    const result = await fetchPublicSlugs();
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).not.toHaveProperty('ok');
+    expect(result).toEqual(rows);
+
+    const query = fake.onlyQueryFor('listings');
+    expect(firstArgOf(query, 'select')).toBe('slug, updated_at');
+    expect(hasEq(query, 'status', 'active')).toBe(true);
+    expect(hasEq(query, 'moderation_status', 'approved')).toBe(true);
   });
 });

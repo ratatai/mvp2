@@ -18,6 +18,7 @@ import {
   isModerationStatus,
   mapLegacyCategory,
   mapLegacyCondition,
+  mapLegacySeason,
   mapLegacySpecKeys,
   SUPPORTED_CURRENCY,
   type ListingCategory,
@@ -82,6 +83,20 @@ export type RowMapResult =
   | { readonly ok: true; readonly listing: Listing }
   | { readonly ok: false; readonly reason: string };
 
+/**
+ * Rewrites legacy keys, then a legacy `season` value (`vasara` → `summer`).
+ * An unrecognised season is left untouched so validation rejects it.
+ */
+function normalizeSpecRecord(
+  record: Readonly<Record<string, unknown>>
+): Record<string, unknown> {
+  const mapped = mapLegacySpecKeys(record);
+  if (!('season' in mapped)) return mapped;
+
+  const season = mapLegacySeason(mapped['season']);
+  return season === null ? mapped : { ...mapped, season };
+}
+
 function normalizeSpecs(specs: unknown): Record<string, unknown> | null {
   if (typeof specs !== 'object' || specs === null || Array.isArray(specs)) {
     return null;
@@ -95,17 +110,17 @@ function normalizeSpecs(specs: unknown): Record<string, unknown> | null {
     const tire = record['tire'];
 
     return {
-      ...mapLegacySpecKeys(record),
+      ...normalizeSpecRecord(record),
       ...(typeof rim === 'object' && rim !== null && !Array.isArray(rim)
-        ? { rim: mapLegacySpecKeys(rim as Record<string, unknown>) }
+        ? { rim: normalizeSpecRecord(rim as Record<string, unknown>) }
         : {}),
       ...(typeof tire === 'object' && tire !== null && !Array.isArray(tire)
-        ? { tire: mapLegacySpecKeys(tire as Record<string, unknown>) }
+        ? { tire: normalizeSpecRecord(tire as Record<string, unknown>) }
         : {}),
     };
   }
 
-  return mapLegacySpecKeys(record);
+  return normalizeSpecRecord(record);
 }
 
 /**
