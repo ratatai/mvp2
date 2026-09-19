@@ -65,18 +65,28 @@ export function getPublicEnv(): PublicEnv {
     );
   }
 
-  const siteUrl = (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? 'http://localhost:3000'
-  ).replace(/\/+$/, '');
-
-  cached = { supabaseUrl, supabaseAnonKey, siteUrl };
+  cached = { supabaseUrl, supabaseAnonKey, siteUrl: getSiteUrl() };
   return cached;
 }
 
-/** Absolute site origin, safe to call during static generation. */
+const FALLBACK_SITE_URL = 'http://localhost:3000';
+
+/**
+ * Absolute site origin, safe to call during static generation.
+ * A variable that is present but blank counts as missing, otherwise
+ * `new URL('')` would throw while building page metadata.
+ */
 export function getSiteUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '') ??
-    'http://localhost:3000'
-  );
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? '';
+  if (raw.length === 0) return FALLBACK_SITE_URL;
+
+  const withoutTrailingSlash = raw.replace(/\/+$/, '');
+
+  try {
+    void new URL(withoutTrailingSlash);
+  } catch {
+    return FALLBACK_SITE_URL;
+  }
+
+  return withoutTrailingSlash;
 }

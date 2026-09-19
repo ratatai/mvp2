@@ -14,6 +14,7 @@ import {
   clearFilters,
   filtersToQueryString,
   hasActiveFilters,
+  parseFilters,
   type CatalogFilters,
 } from '@/domain/filters';
 import type { Dictionary } from '@/i18n';
@@ -41,16 +42,16 @@ function fromDraft(draft: Draft, base: CatalogFilters): CatalogFilters {
     params.set(key, value.trim());
   }
 
-  // The category comes from the route, not from the form, and paging always
-  // restarts when filters change.
-  if (base.category !== undefined) params.set('category', base.category);
+  // The category lives in the route (/skelbimai/padangos), so it must not also
+  // be repeated in the query string. Paging always restarts when filters
+  // change, and the chosen sort order is preserved.
+  params.delete('category');
   params.delete('page');
+  params.set('sort', base.sort);
 
-  return {
-    ...(Object.fromEntries(params) as unknown as CatalogFilters),
-    sort: base.sort,
-    page: 1,
-  };
+  // Round-tripping through the parser gives correctly typed values instead of
+  // an object of strings pretending to be CatalogFilters.
+  return parseFilters(params);
 }
 
 const TIRE_FIELDS = ['width', 'aspectRatio', 'diameter', 'season', 'brand', 'treadDepthMin', 'yearMin'] as const;
@@ -106,17 +107,25 @@ export function FilterPanel({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function apply() {
-    const next = fromDraft(draft, filters);
+  /**
+   * `basePath` already encodes the category, so it is stripped from the query
+   * string — otherwise every filtered URL would carry a redundant
+   * `?category=padangos` that the route overrides anyway.
+   */
+  function pushFilters(next: CatalogFilters) {
+    const query = filtersToQueryString({ ...next, category: undefined });
     setOpen(false);
-    router.push(`${basePath}${filtersToQueryString(next)}`, { scroll: true });
+    router.push(`${basePath}${query}`, { scroll: true });
+  }
+
+  function apply() {
+    pushFilters(fromDraft(draft, filters));
   }
 
   function reset() {
     const next = clearFilters(filters);
     setDraft(toDraft(next));
-    setOpen(false);
-    router.push(`${basePath}${filtersToQueryString(next)}`, { scroll: true });
+    pushFilters(next);
   }
 
   const visible = new Set(fieldsFor(filters.category));
@@ -141,9 +150,11 @@ export function FilterPanel({
     </label>
   );
 
-  const body = (
+  // Rendered twice (desktop sidebar and mobile drawer), so each instance needs
+  // its own id — two elements sharing one id is invalid HTML.
+  const renderBody = (variant: 'desktop' | 'mobile') => (
     <form
-      id={formId}
+      id={`${formId}-${variant}`}
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
@@ -343,7 +354,7 @@ export function FilterPanel({
         <h2 className="mb-4 font-display text-lg font-bold">
           {dict.filters.title}
         </h2>
-        {body}
+        {renderBody('desktop')}
       </div>
 
       {/* Mobile drawer */}
@@ -368,7 +379,7 @@ export function FilterPanel({
               <CloseIcon />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">{body}</div>
+          <div className="flex-1 overflow-y-auto p-4">{renderBody('mobile')}</div>
         </div>
       )}
     </>

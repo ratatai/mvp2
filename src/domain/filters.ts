@@ -229,12 +229,22 @@ export function filtersToQueryString(filters: CatalogFilters): string {
   return query.length > 0 ? `?${query}` : '';
 }
 
-/** True when nothing but the defaults is selected. */
+/**
+ * True when a real filter is selected. Paging, sorting and the category tab do
+ * not count — they are navigation, not filtering — so this agrees with the
+ * count shown on the mobile filter button.
+ */
 export function hasActiveFilters(filters: CatalogFilters): boolean {
+  return countActiveFilters(filters) > 0;
+}
+
+/** How many real filters are applied. */
+export function countActiveFilters(filters: CatalogFilters): number {
   const params = filtersToSearchParams(filters);
   params.delete('page');
+  params.delete('sort');
   params.delete('category');
-  return Array.from(params.keys()).length > 0;
+  return Array.from(params.keys()).length;
 }
 
 /** Returns a copy with one filter changed and pagination reset. */

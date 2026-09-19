@@ -53,11 +53,19 @@ export const routes = {
 /** Paths that must never be indexed and always require a session. */
 export const PROTECTED_SEGMENTS = ['mano', 'naujas-skelbimas'] as const;
 
+/**
+ * Matches on whole path segments. Substring matching would also catch a public
+ * URL that merely contains the word, such as /lt/skelbimas/mano-padangos.
+ */
 export function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_SEGMENTS.some(
-    (segment) =>
-      pathname.includes(`/${segment}/`) || pathname.endsWith(`/${segment}`)
-  );
+  const segments = pathname.split('/').filter((segment) => segment.length > 0);
+
+  // segments[0] is the locale; the protected area is the segment after it.
+  return segments
+    .slice(1)
+    .some((segment) =>
+      (PROTECTED_SEGMENTS as readonly string[]).includes(segment)
+    );
 }
 
 /** Swaps the locale prefix of the current path, keeping the rest intact. */

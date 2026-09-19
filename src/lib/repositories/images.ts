@@ -99,10 +99,19 @@ export async function addImages(
     return { ok: false, error: 'forbidden' };
   }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('listing_images')
     .select('id, position, is_primary')
     .eq('listing_id', listingId);
+
+  // A failed read here must not be mistaken for "this listing has no photos":
+  // that would flag the new image as primary and collide with the existing
+  // one, turning a transient blip into a failed upload.
+  if (existingError !== null) {
+    await removeStorageObjects(images.map((image) => image.storagePath));
+    logImageIssue('addImages:existing', existingError);
+    return { ok: false, error: 'unavailable' };
+  }
 
   const current = existing ?? [];
 
@@ -240,6 +249,11 @@ export async function setPrimaryImage(
 /**
  * Applies a new order. Positions are rewritten from the given sequence, so the
  * caller only has to send the ids in the order the seller arranged them.
+ *
+ * The image the seller moved to the front also becomes the primary one.
+ * Without that, buyers would keep seeing the old primary photo first — the
+ * public sort is primary-then-position — and the reordering would appear to do
+ * nothing.
  */
 export async function reorderImages(
   listingId: string,
@@ -265,6 +279,32 @@ export async function reorderImages(
 
     if (error !== null) {
       logImageIssue('reorderImages', error);
+      return { ok: false, error: 'unavailable' };
+    }
+  }
+
+  const first = orderedIds[0];
+  if (first !== undefined) {
+    // Clear first: the partial unique index allows only one primary per row.
+    const { error: clearError } = await supabase
+      .from('listing_images')
+      .update({ is_primary: false })
+      .eq('listing_id', listingId)
+      .eq('is_primary', true);
+
+    if (clearError !== null) {
+      logImageIssue('reorderImages:clearPrimary', clearError);
+      return { ok: false, error: 'unavailable' };
+    }
+
+    const { error: setError } = await supabase
+      .from('listing_images')
+      .update({ is_primary: true })
+      .eq('id', first)
+      .eq('listing_id', listingId);
+
+    if (setError !== null) {
+      logImageIssue('reorderImages:setPrimary', setError);
       return { ok: false, error: 'unavailable' };
     }
   }

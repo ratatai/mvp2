@@ -7,8 +7,8 @@ import { ListingGrid } from '@/components/listing/listing-grid';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { LISTING_CATEGORIES } from '@/domain/canonical';
 import {
+  countActiveFilters,
   filtersToQueryString,
-  filtersToSearchParams,
   type CatalogFilters,
 } from '@/domain/filters';
 import { CATALOG_PAGE_SIZE } from '@/domain/listing.contract';
@@ -16,14 +16,6 @@ import { getDictionary, interpolate } from '@/i18n';
 import type { Locale } from '@/i18n/config';
 import { fetchPublicListings } from '@/lib/repositories/listings';
 import { routes } from '@/lib/routes';
-
-function countActiveFilters(filters: CatalogFilters): number {
-  const params = filtersToSearchParams(filters);
-  params.delete('page');
-  params.delete('sort');
-  params.delete('category');
-  return Array.from(params.keys()).length;
-}
 
 /**
  * The shared catalog body, used by the all-categories route and by each

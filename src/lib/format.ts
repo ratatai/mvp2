@@ -8,32 +8,30 @@
 
 import { INTL_LOCALES, type Locale } from '@/i18n/config';
 
-const priceFormatters = new Map<Locale, Intl.NumberFormat>();
+/**
+ * Cached per locale AND per "whole amount or not", because the two use
+ * different fraction digits: 120 € reads better than 120,00 €, while 120,50 €
+ * must keep both cents. Caching on the locale alone would make the output
+ * depend on whichever amount happened to be formatted first.
+ */
+const priceFormatters = new Map<string, Intl.NumberFormat>();
 const numberFormatters = new Map<Locale, Intl.NumberFormat>();
 const dateFormatters = new Map<Locale, Intl.DateTimeFormat>();
 
 export function formatPrice(amount: number, locale: Locale): string {
-  let formatter = priceFormatters.get(locale);
+  const whole = Number.isInteger(amount);
+  const key = `${locale}:${whole ? 'int' : 'dec'}`;
+
+  let formatter = priceFormatters.get(key);
 
   if (formatter === undefined) {
     formatter = new Intl.NumberFormat(INTL_LOCALES[locale], {
       style: 'currency',
       currency: 'EUR',
-      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: whole ? 0 : 2,
     });
-    priceFormatters.set(locale, formatter);
-  }
-
-  // A cached formatter cannot switch fraction digits per call, so integers are
-  // formatted through a fresh instance to avoid showing "120,00 €" for "120 €".
-  if (Number.isInteger(amount)) {
-    return new Intl.NumberFormat(INTL_LOCALES[locale], {
-      style: 'currency',
-      currency: 'EUR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
+    priceFormatters.set(key, formatter);
   }
 
   return formatter.format(amount);

@@ -111,7 +111,7 @@ export const pcdSchema = z
  * Ranges cover real passenger, SUV and van sizes. Width is intentionally not
  * capped at 305 — 355 and 375 section tires exist and must be listable.
  */
-export const tireSpecsSchema = z
+const tireSpecsObject = z
   .object({
     brand: requiredText(60),
     model: optionalText(80),
@@ -140,11 +140,13 @@ export const tireSpecsSchema = z
   })
   .strict();
 
+export const tireSpecsSchema = tireSpecsObject;
+
 /* -------------------------------------------------------------------------- */
 /* Rims                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export const rimSpecsSchema = z
+const rimSpecsObject = z
   .object({
     brand: requiredText(60),
     model: optionalText(80),
@@ -161,28 +163,34 @@ export const rimSpecsSchema = z
     color: optionalText(40),
     repairs: z.array(z.enum(RIM_REPAIRS)).max(4).optional(),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    const parsed = parsePcd(value.pcd);
+  .strict();
 
-    if (parsed === null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['pcd'],
-        message: 'invalid_pcd',
-      });
-      return;
-    }
+/** The bolt count must agree with the first part of the PCD. */
+function checkPcdAgreement(
+  value: { pcd: string; bolt_count: number },
+  ctx: z.RefinementCtx
+): void {
+  const parsed = parsePcd(value.pcd);
 
-    // The bolt count must agree with the first part of the PCD.
-    if (parsed.boltCount !== value.bolt_count) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['bolt_count'],
-        message: 'bolt_count_pcd_mismatch',
-      });
-    }
-  });
+  if (parsed === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['pcd'],
+      message: 'invalid_pcd',
+    });
+    return;
+  }
+
+  if (parsed.boltCount !== value.bolt_count) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['bolt_count'],
+      message: 'bolt_count_pcd_mismatch',
+    });
+  }
+}
+
+export const rimSpecsSchema = rimSpecsObject.superRefine(checkPcdAgreement);
 
 /* -------------------------------------------------------------------------- */
 /* Complete wheels                                                             */
@@ -193,18 +201,25 @@ export const rimSpecsSchema = z
  * validated exactly as strictly as its parts, plus a physical sanity check:
  * a 17" tire cannot sit on an 18" rim.
  */
+/*
+ * Each half is the full rim/tire object EXTENDED with its own condition, not
+ * an intersection: intersecting a strict object with another strict object
+ * makes every real key "unrecognised" on the narrower side, which would reject
+ * every complete wheel. Extending keeps one strict schema that knows all keys.
+ */
+const wheelRimSchema = rimSpecsObject
+  .extend({ condition: conditionSchema.optional() })
+  .strict()
+  .superRefine(checkPcdAgreement);
+
+const wheelTireSchema = tireSpecsObject
+  .extend({ condition: conditionSchema.optional() })
+  .strict();
+
 export const wheelSpecsSchema = z
   .object({
-    rim: z
-      .object({ condition: conditionSchema.optional() })
-      .strict()
-      .partial()
-      .and(rimSpecsSchema),
-    tire: z
-      .object({ condition: conditionSchema.optional() })
-      .strict()
-      .partial()
-      .and(tireSpecsSchema),
+    rim: wheelRimSchema,
+    tire: wheelTireSchema,
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -288,9 +303,11 @@ const listingCoreSchema = z.object({
     .finite()
     .nonnegative()
     .max(1_000_000)
-    .refine((value) => Number.isInteger(Math.round(value * 100)), {
-      message: 'price_precision',
-    }),
+    // Euro cents only: 120.999 is not a price a seller can actually charge.
+    .refine(
+      (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6,
+      { message: 'price_precision' }
+    ),
   quantity: integerIn(1, 100),
   city: requiredText(80),
   area: optionalText(120),
@@ -307,10 +324,19 @@ export const listingDraftSchema = z
 
     if (!result.ok) {
       for (const issue of result.issues) {
+        // Re-attach the sub-path so the caller can render the message next to
+        // the field it belongs to ("specs.rim.pcd" → the rim PCD input)
+        // instead of lumping every spec problem under a single "specs" key.
+        const separator = issue.indexOf(': ');
+        const path =
+          separator === -1 ? [] : issue.slice(0, separator).split('.');
+        const message =
+          separator === -1 ? issue : issue.slice(separator + 2);
+
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['specs'],
-          message: issue,
+          path: ['specs', ...path],
+          message,
         });
       }
     }

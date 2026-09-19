@@ -78,6 +78,22 @@ function logRepoIssue(scope: string, detail: unknown): void {
   }
 }
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+
+/**
+ * Builds the client without ever throwing out of this module. Missing or
+ * malformed configuration becomes an 'unavailable' result that the UI can
+ * translate, instead of an unhandled 500.
+ */
+async function getClient(): Promise<SupabaseServerClient | null> {
+  try {
+    return await createSupabaseServerClient();
+  } catch (error) {
+    logRepoIssue('env', error);
+    return null;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Filter translation                                                          */
 /* -------------------------------------------------------------------------- */
@@ -176,13 +192,8 @@ function splitRows(rows: readonly RowWithImages[]): {
 export async function fetchPublicListings(
   filters: CatalogFilters
 ): Promise<RepoResult<Paginated<Listing>>> {
-  let supabase;
-  try {
-    supabase = await createSupabaseServerClient();
-  } catch (error) {
-    logRepoIssue('env', error);
-    return { ok: false, error: 'unavailable' };
-  }
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   let query = supabase
     .from('listings')
@@ -335,13 +346,8 @@ export async function fetchPublicListings(
 export async function fetchListingBySlug(
   slug: string
 ): Promise<RepoResult<ListingWithSeller>> {
-  let supabase;
-  try {
-    supabase = await createSupabaseServerClient();
-  } catch (error) {
-    logRepoIssue('env', error);
-    return { ok: false, error: 'unavailable' };
-  }
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   const { data, error } = await supabase
     .from('listings')
@@ -391,7 +397,8 @@ export async function fetchListingBySlug(
 export async function fetchOwnerListings(
   userId: string
 ): Promise<RepoResult<readonly Listing[]>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   const { data, error } = await supabase
     .from('listings')
@@ -417,7 +424,8 @@ export async function fetchOwnedListingById(
   id: string,
   userId: string
 ): Promise<RepoResult<Listing>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   const { data, error } = await supabase
     .from('listings')
@@ -459,7 +467,8 @@ export async function createListing(
   userId: string,
   status: 'draft' | 'active'
 ): Promise<RepoResult<CreatedListing>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   // Two attempts is enough: the suffix is random, so a collision is already
   // vanishingly unlikely and a second one is not worth a loop.
@@ -494,7 +503,8 @@ export async function updateListing(
   userId: string,
   draft: ListingDraft
 ): Promise<RepoResult<{ readonly slug: string }>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   const { data, error } = await supabase
     .from('listings')
@@ -519,7 +529,8 @@ export async function setListingStatus(
   userId: string,
   status: ListingStatus
 ): Promise<RepoResult<null>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   const { error, count } = await supabase
     .from('listings')
@@ -541,7 +552,8 @@ export async function deleteListing(
   id: string,
   userId: string
 ): Promise<RepoResult<readonly string[]>> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
   // Collect the storage paths before the cascade removes the metadata, so the
   // caller can clean up the bucket and never leave orphaned objects behind.
@@ -574,7 +586,8 @@ export async function fetchPublicSlugs(): Promise<
   readonly { slug: string; updated_at: string }[]
 > {
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = await getClient();
+  if (supabase === null) return { ok: false, error: 'unavailable' };
 
     const { data, error } = await supabase
       .from('listings')
