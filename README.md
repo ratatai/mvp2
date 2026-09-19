@@ -214,14 +214,13 @@ npm run start       # serve the production build
 npm run lint        # ESLint
 npm run typecheck   # tsc --noEmit
 npm run test        # unit + integration (Vitest)
-npm run test:e2e    # Playwright (needs a running app)
+npm run test:e2e    # Playwright (local Supabase only, see E2E_SAFETY.md)
 npm run verify      # lint + typecheck + test + build
 ```
 
-For E2E: `npm run test:e2e:install` once to fetch the browser, then `npm run build`,
-`npm run start`, and `npm run test:e2e` in another terminal. The seller-lifecycle
-spec only runs when `E2E_EMAIL` and `E2E_PASSWORD` are set to a throwaway test
-account.
+E2E runs only against a local Supabase stack and builds and starts its own
+server — never run it with the production `.env.local`. Read
+[E2E_SAFETY.md](E2E_SAFETY.md) before running `npm run test:e2e`.
 
 ---
 

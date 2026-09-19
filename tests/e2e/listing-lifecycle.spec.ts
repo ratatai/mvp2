@@ -3,17 +3,20 @@
  *
  * WHY THIS SPEC IS SKIPPED BY DEFAULT
  * -----------------------------------
- * Everything below writes to a real Supabase project: it signs in, creates
- * three listings, uploads objects to Storage and publishes them. That needs a
- * throw-away account, so the spec only runs when both `E2E_EMAIL` and
- * `E2E_PASSWORD` are set:
+ * Everything below writes to Supabase: it signs in, creates three listings,
+ * uploads objects to Storage and publishes them. It only runs when both
+ * `E2E_EMAIL` and `E2E_PASSWORD` are set, and only ever against the LOCAL
+ * Supabase stack that playwright.config.ts enforces (see E2E_SAFETY.md).
  *
- *     E2E_EMAIL='seller@example.invalid' E2E_PASSWORD='...' npm run test:e2e
+ * The account must be a synthetic user created in that local stack only
+ * (e.g. seller@example.invalid) — never a real person and never a production
+ * account. The credentials are never hard-coded, checked in or printed.
  *
- * The credentials are never hard-coded and never checked in. Use an account
- * that exists only for testing, on a database you are happy to leave rows in;
- * the spec archives what it creates but does not delete it, so a failed run
- * leaves evidence behind rather than silently destroying data.
+ * The spec archives what it creates but does not delete it, so a failed run
+ * leaves evidence behind; reset the local database after every run.
+ *
+ * It runs in the desktop project only (see playwright.config.ts) and in
+ * serial mode, so the shared account is never driven by two workers at once.
  *
  * All listing content the spec types is obviously synthetic ("Testlandia"),
  * and no real phone number or address is ever entered.
@@ -179,9 +182,12 @@ async function publish(page: Page): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 test.describe('seller lifecycle', () => {
+  // One account, one run at a time: never split across parallel workers.
+  test.describe.configure({ mode: 'serial' });
+
   test.skip(
     !hasCredentials,
-    'Set E2E_EMAIL and E2E_PASSWORD (a throw-away test account) to run the seller lifecycle spec.'
+    'Set E2E_EMAIL and E2E_PASSWORD (a synthetic user in the local Supabase stack) to run the seller lifecycle spec.'
   );
 
   // Three listings, six wizard steps each, plus photo uploads.
