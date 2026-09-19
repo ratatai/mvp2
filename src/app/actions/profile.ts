@@ -2,15 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 
+import type { ProfileFormState } from '@/app/actions/profile-state';
 import { isLocale, type Locale } from '@/i18n/config';
 import { updateOwnProfile } from '@/lib/repositories/profiles';
 import { getSessionUser } from '@/lib/supabase/server';
-
-export interface ProfileFormState {
-  readonly status: 'idle' | 'saved' | 'error';
-}
-
-export const IDLE_PROFILE_STATE: ProfileFormState = { status: 'idle' };
 
 function text(formData: FormData, key: string): string | null {
   const value = formData.get(key);

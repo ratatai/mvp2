@@ -5,14 +5,16 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
-  IDLE_AUTH_STATE,
   requestPasswordResetAction,
   signInAction,
   signUpAction,
   updatePasswordAction,
+} from '@/app/actions/auth';
+import {
+  IDLE_AUTH_STATE,
   type AuthErrorCode,
   type AuthFormState,
-} from '@/app/actions/auth';
+} from '@/app/actions/auth-state';
 import type { Dictionary } from '@/i18n';
 import type { Locale } from '@/i18n/config';
 import { routes } from '@/lib/routes';

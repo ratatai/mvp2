@@ -3,10 +3,8 @@
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
-import {
-  IDLE_PROFILE_STATE,
-  updateProfileAction,
-} from '@/app/actions/profile';
+import { updateProfileAction } from '@/app/actions/profile';
+import { IDLE_PROFILE_STATE } from '@/app/actions/profile-state';
 import type { OwnProfile } from '@/lib/repositories/profiles';
 import { LOCALES, LOCALE_LABELS } from '@/i18n/config';
 import type { Dictionary } from '@/i18n';

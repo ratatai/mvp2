@@ -13,28 +13,12 @@
 
 import { redirect } from 'next/navigation';
 
+import type { AuthErrorCode, AuthFormState } from '@/app/actions/auth-state';
 import { isLocale, type Locale } from '@/i18n/config';
 import { getSiteUrl } from '@/lib/env';
 import { ensureProfile } from '@/lib/repositories/profiles';
 import { routes } from '@/lib/routes';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-
-export type AuthErrorCode =
-  | 'invalid_credentials'
-  | 'email_invalid'
-  | 'password_short'
-  | 'password_mismatch'
-  | 'rate_limit'
-  | 'generic';
-
-export interface AuthFormState {
-  readonly status: 'idle' | 'error' | 'success';
-  readonly code?: AuthErrorCode;
-  /** Set when the flow finished but the visitor stays on the page. */
-  readonly notice?: 'signup_success' | 'recovery_sent' | 'password_updated';
-}
-
-export const IDLE_AUTH_STATE: AuthFormState = { status: 'idle' };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD_LENGTH = 8;
