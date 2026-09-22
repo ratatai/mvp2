@@ -1,24 +1,17 @@
 /** @type {import('next').NextConfig} */
 
-// Supabase Storage host is derived from the public URL so that next/image can
-// optimise listing photos without hardcoding a project reference in the repo.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+import { supabaseStorageImagePattern } from './src/lib/supabase/storage-image-pattern.mjs';
+
+// Protocol, host and port of Supabase Storage are derived from the public URL,
+// so next/image can optimise listing photos without hardcoding a project
+// reference: https on the default port for a hosted project, exactly
+// http://127.0.0.1:54321 for the local stack used by E2E.
+const storagePattern = supabaseStorageImagePattern(
+  process.env.NEXT_PUBLIC_SUPABASE_URL
+);
 
 /** @type {import('next').NextConfig['images']['remotePatterns']} */
-const remotePatterns = [];
-
-if (supabaseUrl) {
-  try {
-    const { hostname } = new URL(supabaseUrl);
-    remotePatterns.push({
-      protocol: 'https',
-      hostname,
-      pathname: '/storage/v1/object/public/**',
-    });
-  } catch {
-    // An invalid URL is reported by the runtime env validation in src/lib/env.ts.
-  }
-}
+const remotePatterns = storagePattern === null ? [] : [{ ...storagePattern }];
 
 const nextConfig = {
   reactStrictMode: true,
