@@ -95,7 +95,10 @@ test.describe('login failure handling', () => {
     await page.getByLabel(LT.password).fill('definitely-not-the-password');
     await page.getByRole('button', { name: LT.loginSubmit }).click();
 
-    const alert = page.getByRole('alert');
+    // Scoped to <main>: Next.js also renders a route announcer with
+    // role="alert" outside the page content. It is empty, so an unscoped
+    // locator can resolve to it before the form error appears.
+    const alert = page.getByRole('main').getByRole('alert');
     await expect(alert).toBeVisible();
 
     const message = (await alert.textContent())?.trim() ?? '';

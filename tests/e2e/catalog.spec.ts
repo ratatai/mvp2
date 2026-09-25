@@ -10,12 +10,14 @@ import { expect, test } from '@playwright/test';
 
 import {
   countListings,
+  EN,
   LT,
   listingCards,
   openFilterForm,
   pathOf,
   queryParam,
   routes,
+  RU,
 } from './helpers';
 
 test.describe('public catalog', () => {
@@ -139,6 +141,40 @@ test.describe('public catalog', () => {
     await expect(
       page.getByRole('heading', { name: LT.notFoundTitle })
     ).toBeVisible();
+  });
+
+  test('renders the 404 page in the language of the unknown URL, inside the site layout', async ({
+    page,
+  }) => {
+    const cases = [
+      { locale: 'lt', title: LT.notFoundTitle },
+      { locale: 'ru', title: RU.notFoundTitle },
+      { locale: 'en', title: EN.notFoundTitle },
+    ] as const;
+
+    for (const { locale, title } of cases) {
+      const response = await page.goto(`/${locale}/this-route-does-not-exist-000`);
+
+      expect(response?.status()).toBe(404);
+      await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+      // The site layout, not Next's bare built-in page.
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
+      await expect(page.getByRole('banner')).toBeVisible();
+      await expect(page.getByRole('contentinfo')).toBeVisible();
+      // The way out stays in the same language.
+      await expect(
+        page.getByRole('main').getByRole('link').first()
+      ).toHaveAttribute('href', routes.home(locale));
+    }
+  });
+
+  test('renders the 404 page in Russian for an unknown listing slug under /ru', async ({
+    page,
+  }) => {
+    const response = await page.goto(routes.listing('ru', 'no-such-listing-00000000'));
+
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1, name: RU.notFoundTitle })).toBeVisible();
   });
 
   test('renders the not-found page for an unknown listing slug', async ({ page }) => {

@@ -41,6 +41,15 @@ export function isLocale(value: unknown): value is Locale {
 }
 
 /**
+ * The locale a path starts with, or the default. For places that receive no
+ * route params — the not-found boundary is one of them.
+ */
+export function localeFromPathname(pathname: string | null): Locale {
+  const first = pathname?.split('/').find((segment) => segment.length > 0);
+  return isLocale(first) ? first : DEFAULT_LOCALE;
+}
+
+/**
  * Picks the best locale from an Accept-Language header, falling back to
  * Lithuanian. Used only on the very first visit, before the cookie exists.
  */
