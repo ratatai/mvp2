@@ -36,4 +36,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: '--max-turns 25'
+          claude_args: >-
+            --max-turns 25
+            --allowedTools "Bash(npm ci),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(git checkout -b:*)"
