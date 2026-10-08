@@ -101,8 +101,9 @@ Hosted project: run in Supabase Dashboard → **SQL Editor** → New query, in o
 Local stack: `supabase db reset` applies every file in filename order. `000`
 finds no `seller_id` and does nothing, `001` and `002` create the canonical
 schema, and `20260929144644_reconcile_august_schema_to_canonical.sql` detects
-the canonical schema, verifies it and changes nothing. (This canonical no-op
-path has not yet been executed from this repository; see the runbook.)
+the canonical schema, verifies it and changes nothing. (Earlier local runs of
+this path were reported but are not reproduced in this repository; see the
+runbook.)
 
 ### A project that already ran the old lean-MVP (`seller_id`) migrations
 
@@ -288,9 +289,10 @@ time**: `NEXT_PUBLIC_*` values are inlined into the browser bundle. `npm run bui
 completes without them (per-user pages are rendered on demand), but such a build
 is only a compile check and cannot be deployed.
 
-Deploy to a **preview URL first**. Do not point production DNS at this
-application until you have verified the full flow against your live Supabase
-project.
+Deploy to a **preview URL first**. Validate the full flow with Playwright on a
+local stack only ([E2E_SAFETY.md](E2E_SAFETY.md)); on the preview, do a
+separately approved manual smoke check and never run `npm run test:e2e` against
+it. Do not point production DNS at this application until both have passed.
 
 ---
 

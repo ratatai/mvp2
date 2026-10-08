@@ -24,12 +24,15 @@ There are three kinds of evidence. Keep them apart.
 | Local disposable runs (canonical preservation, legacy conversion, access checks, rejection of write rules/triggers on `listing_sellers`) | Earlier report | **Reported, not re-run from this repo.** |
 | Static review of the SQL; file MD5/size; app `npm ci`, `lint`, `typecheck`, `test` (Vitest), `build` | CI runs on PR #3 / this branch | **Executed** |
 
-Still unverified:
+Not executed by this executor (absence of evidence here, not proof that it has
+never run anywhere; earlier local runs were reported but are not re-run from
+this repo):
 - a legacy run that can be reproduced from this repo. The source August schema
   backup and catalogue export are not tracked, and no fixture has been invented
   to stand in for them;
 - the canonical no-op path under `supabase db reset` on a local stack;
-- application end-to-end behaviour (Playwright seller lifecycle);
+- application end-to-end behaviour (Playwright seller lifecycle on a local
+  disposable stack);
 - behaviour under live traffic.
 
 ## 1. What happens to data
@@ -96,6 +99,27 @@ select version, name from supabase_migrations.schema_migrations order by version
 Also verify the file: `md5sum` and `wc -c` must match §0.
 
 Keep the outputs with the decision record. Any mismatch means stop.
+
+### Current production pre-flight (aggregates only)
+
+Source: orchestrator read-only query on production, 2026-10-08. Not re-run by
+this executor. Aggregates only; no row data or PII recorded.
+
+| Check | Result |
+|---|---|
+| `server_version` | 17.6 |
+| Applying (executor) role | `rolbypassrls = true` |
+| `auth.users` / `public.profiles` | 1 / 1 |
+| `listings` / `listing_images` / `listing-images` objects | 0 / 0 / 0 |
+| `profiles.username` non-null | 0 |
+| `profiles.is_dealer = true` | 0 |
+| `profiles.phone` non-null | 0 |
+| `profiles` columns | the original 9 columns, as supplied in the preceding orchestrator inventory |
+| `schema_migrations` | the two August-era rows; `000`/`001`/`002`/`20260929144644` not recorded |
+
+So no existing `username`, `is_dealer` or `phone` value is at risk today. The
+loss and default rules in §1 still apply to any of these fields that become
+populated before the apply, so §3 must be re-run immediately before the window.
 
 ## 4. Backup
 
@@ -166,36 +190,62 @@ If you rehearse, use a fresh restore and the exact file, as in §7.
   current time. That is how the clone got `20261006065826`.
 - On error, the whole block rolls back. Fix nothing in place; return to review.
 
-## 8. Migration history: reviewed proposal only
+## 8. Migration history: UNRESOLVED, not ready to execute
 
 **No history operation has been performed.** Nobody has run `migration repair`
 or `db push`, or written to `schema_migrations`, on any project as part of this
-work. The text below is a proposal that needs separate approval.
+work. No history procedure is approved, and nothing in this section is a
+command to run.
 
-- **Preserve every existing row** in `supabase_migrations.schema_migrations`.
-  Delete or rewrite nothing.
-- For each remote-only August-era version, add a matching historical file to
-  the repo (documented as already applied) so that `supabase migration list`
-  agrees. Do not mark those versions reverted.
-- Only after a successful apply, the §9 checks and review, record `000`, `001`,
-  `002` and `20260929144644` as applied. The reconcile postconditions prove that
-  the schema equals `001` + `002`, and `000` is a no-op on this schema.
-  Proposed command:
-  `supabase migration repair --status applied 000 001 002 20260929144644`.
+Fixed constraints:
+- **Preserve the two existing August-era rows** in
+  `supabase_migrations.schema_migrations`. Delete, rewrite or mark reverted
+  nothing.
 - Never record `20261006065826` on production. Changes to the clone's history
   need their own approval.
-- Use `supabase db push` only once `migration list` shows local and remote in
-  agreement.
+- Do not use `supabase db push` against production while local and remote
+  history disagree.
+
+Open problem. Matching `supabase migration list` output is **not** evidence of
+safety. Two candidate approaches exist, and neither is proven:
+- *Retaining historical August SQL* as timestamped files next to
+  `000`/`001`/`002`. Timestamped versions sort after the numeric ones, so a
+  fresh `supabase db reset` would run the August SQL on top of the canonical
+  schema, followed by the reconcile file. Nobody has shown that this order
+  succeeds or that the reconcile file still recognises the result.
+- *Recording a baseline* (marking `000`/`001`/`002`/`20260929144644` applied on
+  production after the apply). This depends on the reconcile postconditions
+  being equivalent to `001` + `002` for every later migration, which is not yet
+  demonstrated.
+
+Before either approach can be proposed for approval it must pass, with the
+exact files committed:
+1. a fresh `supabase db reset` on a local disposable stack, applying every file
+   in filename order, with the canonical postconditions checked; and
+2. a linked-history dry-run (`supabase migration list` and
+   `supabase db push --dry-run`, read-only, separately approved) against the
+   linked target, showing exactly which versions would run, with nothing
+   pending except the intended ones.
+
+Until both pass and are reviewed, history alignment stays an open blocker
+(§11).
 
 ## 9. After the apply
 
 - Re-run §3. Expect `phone_is_public` and `preferred_language` to be present,
   the legacy columns gone, and profile and Auth counts unchanged.
 - Check that the canonical signup trigger exists on `auth.users`.
-- Build the app with the target's `NEXT_PUBLIC_SUPABASE_URL`,
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL` (inlined at build
-  time). Deploy it to a preview before production, and run the seller lifecycle
-  with a synthetic account.
+- **Application validation happens locally.** Run the Playwright suite,
+  including the seller lifecycle, only on a local disposable stack as described
+  in [E2E_SAFETY.md](../E2E_SAFETY.md): loopback `NEXT_PUBLIC_SUPABASE_URL`,
+  synthetic local user, `supabase db reset` afterwards. Never point
+  `npm run test:e2e` or any Playwright spec at a hosted project.
+- **Hosted preview smoke check (separately approved, manual).** Rebuild `.next`
+  with the target's `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  and `NEXT_PUBLIC_SITE_URL` (inlined at build time) and deploy to a preview URL.
+  With its own owner approval, a person checks read-only pages and sign-in by
+  hand. This check never invokes the local-only Playwright suite and creates no
+  listings, images or Storage objects unless the owner approves that separately.
 - Keep the backups until the owner releases them.
 
 ## 10. Rollback
@@ -209,8 +259,12 @@ backup.
 
 1. Owner decision on legacy field loss (`username`, `is_dealer`, extras).
 2. Owner decision on `phone_is_public = true`.
-3. Production migration history alignment (§8): proposal only.
-4. No E2E run yet on a disposable local PG17 stack with the seller lifecycle
-   actually executed.
+3. Production migration history alignment (§8): **unresolved**. Needs a fresh
+   reset plus linked-history dry-run before any procedure is proposed.
+4. Local disposable PG17 evidence: this executor has no record of the canonical
+   `supabase db reset` no-op path or the Playwright seller lifecycle being
+   executed. Earlier local disposable runs were reported (§0) but are not
+   reproduced here. A local run, with output attached, is still required.
 5. The August source backup and catalogue export are not tracked, so the legacy
    path cannot be reproduced from this repository.
+6. Hosted preview smoke check (§9): not yet approved or performed.
