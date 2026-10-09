@@ -38,4 +38,4 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
             --max-turns 25
-            --allowedTools "Bash(npm ci),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(git checkout -b:*)"
+            --allowedTools "Bash(npm ci),Bash(npm run lint),Bash(npm run typecheck),Bash(npm run test),Bash(npm run build),Bash(git checkout -b:*),Bash(git show origin/main:CLAUDE.md),Bash(npm audit --package-lock-only --json),Bash(npm audit --omit=dev --package-lock-only --json),Bash(npm ls:*),Bash(npm explain:*),Bash(env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_ANON_KEY -u NEXT_PUBLIC_SITE_URL npm run build)"
