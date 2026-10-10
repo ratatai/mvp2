@@ -4,6 +4,52 @@ Status: **INCOMPLETE. Both critical findings are now identified (dev-only,
 vitest toolchain). Three findings in the full audit are still unidentified
 because the output was truncated. All audit findings stay release blockers.**
 
+## 0. Update 2026-10-10: `next` 15.5.25 → 15.5.27
+
+Executed by the GitHub Claude executor on base commit
+`7a111e6e16429638a95aa85ec645a346df9eb70f`. Not independently verified by the
+orchestrator. Not a release-readiness claim.
+
+- Command: `npm install --package-lock-only --save-exact next@15.5.27`.
+- `package.json`: only `next` changed, `^15.0.0` → `15.5.27` (exact).
+- `package-lock.json`: `next`, `@next/env` and the eight `@next/swc-*`
+  binaries changed 15.5.25 → 15.5.27. No other version changed; no other direct
+  dependency changed. `@next/eslint-plugin-next`/`eslint-config-next` stay
+  15.5.25. Nested `next/node_modules/postcss` stays **8.4.31**; `sharp` 0.35.4
+  and `source-map-js` 1.2.1 unchanged.
+- Side effect: the executor's npm dropped the `"libc"` arrays from optional
+  Linux platform packages (including `@next/swc-linux-*` and other runtime and
+  dev optional binaries). Metadata only, no version change, but `npm ci` now installs
+  421 packages instead of 416 because it can no longer skip by libc.
+
+| # | Command | Exit | Result |
+|---|---|---|---|
+| 1 | `npm ci` | 0 | added 421, audited 422; 19 (6 moderate, 11 high, 2 critical) |
+| 2 | `npm run lint` | 0 | `✔ No ESLint warnings or errors` |
+| 3 | `npm run typecheck` | 0 | `tsc --noEmit`, no output |
+| 4 | `npm run test` | 0 | Test Files 14 passed (14), Tests 272 passed (272) |
+| 5 | `env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_ANON_KEY -u NEXT_PUBLIC_SITE_URL npm run build` | 0 | Next.js 15.5.27, `✓ Compiled successfully`, `✓ Generating static pages (54/54)` |
+| 6 | `npm audit --omit=dev --package-lock-only --json` | 1 (findings) | 4: 0 critical, 3 high, 1 moderate |
+| 7 | `npm audit --package-lock-only --json` | 1 (findings) | 19: 2 critical, 11 high, 6 moderate |
+
+Effect on findings:
+
+- **Cleared:** `next`'s own advisories GHSA-4jqv-mc3x-m676 and
+  GHSA-mcj8-r9mp-w47p no longer appear.
+- **Still flagged:** `next` stays a moderate finding, now only *via* its nested
+  `postcss` 8.4.31 (range `<=8.5.22`). npm's `fixAvailable` for `next` and the
+  nested `postcss` is now `next@16.4.0`, **semver-major**; no 15.x fix is
+  offered. Not applied.
+- **Unchanged runtime highs:** nested `postcss`, `sharp` (`<0.35.5`),
+  `source-map-js` (`<1.2.2`); the latter two still `fixAvailable: true`.
+- **Totals unchanged** (19 / 4) because `next` remains counted via `postcss`.
+- **Truncation again:** the full-audit output lost about 7 KB in the same
+  range (after `micromatch`, before `tinypool`). 1 high, 2 moderate and the
+  first `tinypool` advisory (range `<=2.1.0`) remain **unidentified and open**.
+
+Sections 1–8 below are the 2026-10-09 baseline; where they differ from this
+section, this section is current.
+
 - Tested commit: `c393cc5b9ab22146d8049caa8b2f49cf8750c596`
   (branch `claude/quality-gate-and-runbook`, PR #5).
 - Lockfile identity: `package-lock.json` git blob
