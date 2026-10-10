@@ -8,7 +8,8 @@ because the output was truncated. All audit findings stay release blockers.**
 
 Executed by the GitHub Claude executor on base commit
 `7a111e6e16429638a95aa85ec645a346df9eb70f`. Not independently verified by the
-orchestrator. Not a release-readiness claim.
+orchestrator. Not a release-readiness claim. The workflow itself ended red only
+because Claude reported success after 27 turns, above the configured limit of 25.
 
 - Command: `npm install --package-lock-only --save-exact next@15.5.27`.
 - `package.json`: only `next` changed, `^15.0.0` → `15.5.27` (exact).
@@ -17,10 +18,11 @@ orchestrator. Not a release-readiness claim.
   dependency changed. `@next/eslint-plugin-next`/`eslint-config-next` stay
   15.5.25. Nested `next/node_modules/postcss` stays **8.4.31**; `sharp` 0.35.4
   and `source-map-js` 1.2.1 unchanged.
-- Side effect: the executor's npm dropped the `"libc"` arrays from optional
-  Linux platform packages (including `@next/swc-linux-*` and other runtime and
-  dev optional binaries). Metadata only, no version change, but `npm ci` now installs
-  421 packages instead of 416 because it can no longer skip by libc.
+- Follow-up commit `6b9b170d59de5610e82746e110d0e392fafd8b09` restored all 44
+  `"libc"` arrays from the pre-update lockfile. The orchestrator compared both
+  lockfiles before saving: the package set is unchanged and the only version
+  changes remain `next`, `@next/env` and eight `@next/swc-*` packages from
+  15.5.25 to 15.5.27. Validation of the restored metadata is pending.
 
 | # | Command | Exit | Result |
 |---|---|---|---|
