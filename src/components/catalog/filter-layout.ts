@@ -73,3 +73,13 @@ export function filterLayout(category: ListingCategory | undefined): FilterLayou
 export function hasActiveSecondary(layout: FilterLayout, filters: CatalogFilters): boolean {
   return layout.secondary.some((key) => filters[key] !== undefined);
 }
+
+/**
+ * Expansion state of the collapsed section after the panel receives new
+ * filters (a submitted search, a category link, Back/Forward). An active
+ * secondary filter forces the section open so it is never hidden; otherwise
+ * the visitor's own toggle is kept.
+ */
+export function nextMoreOpen(current: boolean, filters: CatalogFilters): boolean {
+  return current || hasActiveSecondary(filterLayout(filters.category), filters);
+}

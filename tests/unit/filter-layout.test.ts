@@ -4,10 +4,16 @@ import {
   COMMON_FIELDS,
   filterLayout,
   hasActiveSecondary,
+  nextMoreOpen,
   type FilterFieldKey,
 } from '@/components/catalog/filter-layout';
 import { LISTING_CATEGORIES } from '@/domain/canonical';
-import { DEFAULT_FILTERS, parseFilters, type CatalogFilters } from '@/domain/filters';
+import {
+  clearFilters,
+  DEFAULT_FILTERS,
+  parseFilters,
+  type CatalogFilters,
+} from '@/domain/filters';
 
 const primaryFields = (layout: ReturnType<typeof filterLayout>): FilterFieldKey[] =>
   layout.primary.flatMap((group) => [...group.fields]);
@@ -116,5 +122,45 @@ describe('hasActiveSecondary', () => {
   it('is true when a collapsed filter is set', () => {
     const filters: CatalogFilters = { ...DEFAULT_FILTERS, boltCount: 5 };
     expect(hasActiveSecondary(layout, filters)).toBe(true);
+  });
+});
+
+describe('nextMoreOpen', () => {
+  const url = (path: string) => parseFilters(new URLSearchParams(path));
+
+  it('opens the section when Back/Forward lands on a collapsed filter', () => {
+    // Visitor collapsed the section on a primary-only URL, then pressed Back
+    // to a URL that sets bolt count.
+    const back = url('category=ratlankiai&pcd=5x112&boltCount=5');
+    expect(nextMoreOpen(false, back)).toBe(true);
+  });
+
+  it('opens the section when a category link sets one of its collapsed filters', () => {
+    expect(nextMoreOpen(false, url('category=padangos&season=winter'))).toBe(true);
+    expect(nextMoreOpen(false, url('category=komplektiniai_ratai&priceMax=500'))).toBe(true);
+  });
+
+  it('keeps a collapsed section closed when only technical filters are set', () => {
+    expect(nextMoreOpen(false, url('category=ratlankiai&pcd=5x112&etMin=-10&etMax=45'))).toBe(
+      false
+    );
+  });
+
+  it('keeps a section the visitor opened open across navigation and after reset', () => {
+    expect(nextMoreOpen(true, url('category=padangos&width=205'))).toBe(true);
+    expect(nextMoreOpen(true, clearFilters(url('category=padangos&brand=Nokian')))).toBe(true);
+  });
+
+  it('does not reopen a closed section after reset clears every value', () => {
+    const cleared = clearFilters(url('category=ratlankiai&boltCount=5&city=Vilnius'));
+    expect(hasActiveSecondary(filterLayout(cleared.category), cleared)).toBe(false);
+    expect(nextMoreOpen(false, cleared)).toBe(false);
+  });
+
+  it('treats a filter that is collapsed in one category but technical in another by layout', () => {
+    // ET is technical for rims and absent from the tyre layout entirely.
+    expect(nextMoreOpen(false, url('category=ratlankiai&etMin=-5'))).toBe(false);
+    // Bolt count is collapsed for rims but technical for complete wheels.
+    expect(nextMoreOpen(false, url('category=komplektiniai_ratai&boltCount=5'))).toBe(false);
   });
 });

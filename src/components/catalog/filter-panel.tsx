@@ -6,6 +6,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import {
   filterLayout,
   hasActiveSecondary,
+  nextMoreOpen,
   type FilterFieldKey,
   type FilterGroupId,
 } from '@/components/catalog/filter-layout';
@@ -90,9 +91,11 @@ export function FilterPanel({
   const [moreOpen, setMoreOpen] = useState(() => hasActiveSecondary(layout, filters));
   const formId = useId();
 
-  // Keep the form in sync when the visitor navigates with Back/Forward.
+  // Keep the form in sync when the visitor navigates with Back/Forward, and
+  // reveal the collapsed section if the incoming URL sets a filter inside it.
   useEffect(() => {
     setDraft(toDraft(filters));
+    setMoreOpen((current) => nextMoreOpen(current, filters));
   }, [filters]);
 
   useEffect(() => {
