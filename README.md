@@ -35,8 +35,8 @@ no ORM, no analytics SDK.
 ## Quick start
 
 ```bash
-# 1. Install
-npm install
+# 1. Install (exact versions from package-lock.json)
+npm ci
 
 # 2. Configure
 cp .env.example .env.local
@@ -68,14 +68,44 @@ enforced by Row Level Security in the database, not by hiding a key.
 
 ## Database setup
 
-Run the SQL files in Supabase Dashboard → **SQL Editor** → New query, in order.
+Identify the starting point of the target database **before** running any SQL.
+An empty marketplace is not the same as a disposable database: a project with
+no listings can still hold real Auth users and profiles.
 
-### A fresh Supabase project
+| Starting point | Recognised by | Supported path |
+|---|---|---|
+| Fresh database | no `public.profiles`, `public.listings`, `public.listing_images` | `001` → `002` |
+| `seller_id` legacy (old lean MVP) | `public.listings.seller_id` exists | `000` → `001` → `002` |
+| August `user_id` legacy | `listings.user_id`, `profiles.full_name`, `profiles.username`, `profiles.is_dealer`, and **no** `profiles.phone_is_public` | reconcile migration only, via [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) |
+
+Read-only check:
+
+```sql
+select table_name, column_name
+from information_schema.columns
+where table_schema = 'public'
+  and (table_name, column_name) in (
+    ('listings','seller_id'), ('listings','user_id'),
+    ('profiles','full_name'), ('profiles','username'),
+    ('profiles','is_dealer'), ('profiles','phone_is_public'))
+order by 1, 2;
+```
+
+### A fresh database
+
+Hosted project: run in Supabase Dashboard → **SQL Editor** → New query, in order:
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_security_hardening.sql`
 
-### A project that already ran the old lean-MVP migrations
+Local stack: `supabase db reset` applies every file in filename order. `000`
+finds no `seller_id` and does nothing, `001` and `002` create the canonical
+schema, and `20260929144644_reconcile_august_schema_to_canonical.sql` detects
+the canonical schema, verifies it and changes nothing. (Earlier local runs of
+this path were reported but are not reproduced in this repository; see the
+runbook.)
+
+### A project that already ran the old lean-MVP (`seller_id`) migrations
 
 Run the compatibility step **first**. It renames the old tables to `legacy_*` so
 that every existing row is preserved and readable. It performs no `DROP TABLE`
@@ -87,6 +117,33 @@ and no `DELETE`.
 
 Afterwards you can inspect the archived rows with `select * from public.legacy_listings;`
 and drop those tables yourself once you no longer need them.
+
+### The August `user_id` legacy schema (the hosted project)
+
+**Do not run `000`, `001` or `002`, and do not run `supabase db push`, against it.**
+`000` does not detect this schema (it looks for `seller_id`). `001` would replace
+`public.handle_new_user()` and add a second signup trigger before failing at the
+`listing_sellers` view (`moderation_status` does not exist).
+
+The only supported path is
+`supabase/migrations/20260929144644_reconcile_august_schema_to_canonical.sql`,
+applied exactly as described in [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md),
+after a written owner decision. It runs as one atomic block and aborts on any
+unrecognised structure or failed precondition.
+
+- It requires an empty marketplace: no listings, listing images or
+  `listing-images` objects.
+- It keeps **every profile row** (same `id`) and **every Auth user** (verified by
+  digest).
+- It does **not** keep every profile field:
+  - `display_name = coalesce(nullif(btrim(full_name),''), nullif(btrim(username),''))`,
+    so `username` is lost whenever `full_name` is non-blank.
+  - `is_dealer` and any other unmapped legacy column are dropped.
+  - `preferred_language` is set to `'lt'`.
+  - `phone_is_public` is set to `true` for every profile.
+- The legacy path has only been executed on a restored clone (reported, not
+  re-run here). It cannot be reproduced from this repository, because the source
+  August schema backup is not tracked.
 
 ### Optional demo data
 
@@ -227,11 +284,15 @@ server — never run it with the production `.env.local`. Read
 ## Deployment
 
 Any host that runs Next.js works. Set the three environment variables, run
-`npm run build`, then `npm run start`.
+`npm run build`, then `npm run start`. The variables must be present **at build
+time**: `NEXT_PUBLIC_*` values are inlined into the browser bundle. `npm run build`
+completes without them (per-user pages are rendered on demand), but such a build
+is only a compile check and cannot be deployed.
 
-Deploy to a **preview URL first**. Do not point production DNS at this
-application until you have verified the full flow against your live Supabase
-project.
+Deploy to a **preview URL first**. Validate the full flow with Playwright on a
+local stack only ([E2E_SAFETY.md](E2E_SAFETY.md)); on the preview, do a
+separately approved manual smoke check and never run `npm run test:e2e` against
+it. Do not point production DNS at this application until both have passed.
 
 ---
 

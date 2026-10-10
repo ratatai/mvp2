@@ -15,8 +15,10 @@ import { getPublicEnv } from '@/lib/env';
 import type { Database } from './database.types';
 
 export async function createSupabaseServerClient() {
-  const { supabaseUrl, supabaseAnonKey } = getPublicEnv();
+  // Read cookies before env: this marks the route as dynamic, so `next build`
+  // does not try to prerender per-user pages (and fail on missing env).
   const cookieStore = await cookies();
+  const { supabaseUrl, supabaseAnonKey } = getPublicEnv();
 
   return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
