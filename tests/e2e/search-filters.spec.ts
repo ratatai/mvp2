@@ -291,6 +291,159 @@ test.describe('mobile filter drawer', () => {
   });
 });
 
+/*
+ * RU/EN smoke: the same technical fields, labelled from the committed
+ * ru.json/en.json, keep the locale prefix and canonical URL keys. `openFilterForm`
+ * in helpers.ts matches LT labels only, so `openLocalizedForm` below repeats
+ * its viewport logic with the locale's own strings.
+ */
+
+const LOCALIZED = [
+  {
+    locale: 'ru',
+    filtersOpen: 'Фильтры',
+    filtersTitle: 'Фильтры',
+    apply: 'Применить',
+    reset: 'Очистить',
+    width: 'Ширина (мм)',
+    aspectRatio: 'Профиль (%)',
+    diameter: 'Диаметр R (дюймы)',
+    pcd: 'Разболтовка (PCD)',
+    cb: 'Центральное отверстие CB (мм)',
+    etFrom: 'ET от (мм)',
+    etTo: 'ET до (мм)',
+    tireSection: 'Параметры шин',
+    rimSection: 'Параметры дисков',
+    wheelTireSection: 'Шина',
+    wheelRimSection: 'Диск',
+  },
+  {
+    locale: 'en',
+    filtersOpen: 'Filters',
+    filtersTitle: 'Filters',
+    apply: 'Apply',
+    reset: 'Clear',
+    width: 'Width (mm)',
+    aspectRatio: 'Profile (%)',
+    diameter: 'Diameter R (inches)',
+    pcd: 'Bolt pattern (PCD)',
+    cb: 'Centre bore CB (mm)',
+    etFrom: 'ET from (mm)',
+    etTo: 'ET to (mm)',
+    tireSection: 'Tyre specs',
+    rimSection: 'Rim specs',
+    wheelTireSection: 'Tyre',
+    wheelRimSection: 'Rim',
+  },
+] as const;
+
+type Localized = (typeof LOCALIZED)[number];
+
+/** `openFilterForm` with the given locale's drawer and submit labels. */
+async function openLocalizedForm(page: Page, l: Localized): Promise<Locator> {
+  const trigger = page.getByRole('button', { name: new RegExp(l.filtersOpen) });
+
+  if (await trigger.isVisible()) {
+    await trigger.click();
+    const drawer = page.getByRole('dialog', { name: l.filtersTitle });
+    await expect(drawer).toBeVisible();
+    return drawer;
+  }
+
+  const sidebar = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: l.apply }) });
+  await expect(sidebar).toBeVisible();
+  return sidebar;
+}
+
+test.describe('RU/EN search smoke', () => {
+  for (const l of LOCALIZED) {
+    test(`${l.locale}: tyre width, profile and diameter submit and survive reload`, async ({
+      page,
+    }) => {
+      const path = routes.tires(l.locale);
+      await page.goto(path);
+      let form = await openLocalizedForm(page, l);
+      await expect(form.getByText(l.tireSection, { exact: true })).toBeVisible();
+
+      await form.getByLabel(l.width).fill('225');
+      await form.getByLabel(l.aspectRatio).fill('45');
+      await form.getByLabel(l.diameter).fill('17');
+      await form.getByRole('button', { name: l.apply }).click();
+      await expect(page).toHaveURL(/width=225/);
+
+      await page.reload();
+      expect(pathOf(page)).toBe(path);
+      expect(queryParam(page, 'width')).toBe('225');
+      expect(queryParam(page, 'aspectRatio')).toBe('45');
+      expect(queryParam(page, 'diameter')).toBe('17');
+
+      form = await openLocalizedForm(page, l);
+      await expect(form.getByLabel(l.width)).toHaveValue('225');
+      await expect(form.getByLabel(l.aspectRatio)).toHaveValue('45');
+      await expect(form.getByLabel(l.diameter)).toHaveValue('17');
+    });
+
+    for (const { name, path, legends } of [
+      { name: 'rims', path: routes.rims(l.locale), legends: [l.rimSection] },
+      {
+        name: 'complete wheels',
+        path: routes.wheels(l.locale),
+        legends: [l.wheelTireSection, l.wheelRimSection],
+      },
+    ]) {
+      test(`${l.locale}: ${name} technical fields and a negative-to-positive ET range survive reload and reset`, async ({
+        page,
+      }) => {
+        await page.goto(path);
+        let form = await openLocalizedForm(page, l);
+
+        for (const legend of legends) {
+          await expect(form.getByText(legend, { exact: true })).toBeVisible();
+        }
+        for (const label of [l.pcd, l.cb, l.diameter, l.etFrom, l.etTo]) {
+          await expect(form.getByLabel(label)).toBeVisible();
+        }
+        // Complete wheels share one diameter between the tyre and rim groups.
+        await expect(form.getByLabel(l.diameter)).toHaveCount(1);
+        if (name === 'complete wheels') {
+          await expect(form.getByLabel(l.width)).toBeVisible();
+          await expect(form.getByLabel(l.aspectRatio)).toBeVisible();
+        }
+
+        await form.getByLabel(l.pcd).fill('5x112');
+        await form.getByLabel(l.cb).fill('57.1');
+        await form.getByLabel(l.diameter).fill('17');
+        await form.getByLabel(l.etFrom).fill('-15');
+        await form.getByLabel(l.etTo).fill('35');
+        await form.getByRole('button', { name: l.apply }).click();
+        await expect(page).toHaveURL(/etMax=35/);
+
+        await page.reload();
+        expect(pathOf(page)).toBe(path);
+        expect(queryParam(page, 'pcd')).toBe('5x112');
+        expect(queryParam(page, 'cb')).toBe('57.1');
+        expect(queryParam(page, 'diameter')).toBe('17');
+        expect(queryParam(page, 'etMin')).toBe('-15');
+        expect(queryParam(page, 'etMax')).toBe('35');
+
+        form = await openLocalizedForm(page, l);
+        await expect(form.getByLabel(l.etFrom)).toHaveValue('-15');
+        await expect(form.getByLabel(l.etTo)).toHaveValue('35');
+
+        await form.getByRole('button', { name: l.reset }).click();
+        await expect(page).not.toHaveURL(/etM(in|ax)=/);
+        expect(pathOf(page)).toBe(path);
+
+        form = await openLocalizedForm(page, l);
+        await expect(form.getByLabel(l.etFrom)).toHaveValue('');
+        await expect(form.getByLabel(l.etTo)).toHaveValue('');
+      });
+    }
+  }
+});
+
 test.describe('search panel fits narrow screens', () => {
   for (const width of NARROW_WIDTHS) {
     for (const { name, path } of CATEGORIES) {
