@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Reviewed head of PR #8 (feature/category-first-search).
-  APP_SHA: 1daa184dacfbf8999831c1c623e3597391cf107c
+  APP_SHA: e78725b1bdc7b55b454cc845f9453a44aa50602b
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
