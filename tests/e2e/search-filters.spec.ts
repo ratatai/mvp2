@@ -342,10 +342,13 @@ type Localized = (typeof LOCALIZED)[number];
 /** `openFilterForm` with the given locale's drawer and submit labels. */
 async function openLocalizedForm(page: Page, l: Localized): Promise<Locator> {
   const trigger = page.getByRole('button', { name: new RegExp(l.filtersOpen) });
+  const drawer = page.getByRole('dialog', { name: l.filtersTitle });
+
+  // Same as openFilterForm: reuse a drawer that is still open.
+  if (await drawer.isVisible()) return drawer;
 
   if (await trigger.isVisible()) {
     await trigger.click();
-    const drawer = page.getByRole('dialog', { name: l.filtersTitle });
     await expect(drawer).toBeVisible();
     return drawer;
   }
