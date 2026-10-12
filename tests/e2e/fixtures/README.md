@@ -67,3 +67,39 @@ Prerequisites are the same as for the rim fixture, in a **separate** new stack
    15 rows were inserted.
 5. Run only the wheel spec with `E2E_WHEEL_FIXTURE=loaded`.
 6. Throw the stack away: `supabase stop --no-backup`.
+
+## `tyre-results.sql`: plain tyre result matching
+
+Used by `tests/e2e/tyre-results.spec.ts`. Fifteen synthetic rows. Plain tyres
+use the canonical flat shape and canonical seasons:
+
+- three public 205/55 R16 matches, one per season (summer, winter,
+  all_season);
+- three public near-misses, each differing in one field: width, profile,
+  diameter;
+- two public wide tyres, 355/25 R22 and 375/40 R22 (width is not capped at
+  305);
+- five non-public tyres (draft, sold, archived, pending, rejected) that must
+  never appear;
+- one complete wheel (nested 205/55 R16) and one plain R16 rim that would
+  match the tyre query; they must never appear on the tyre route.
+
+No photos, phones or other contact data.
+
+Prerequisites are the same as for the other fixtures, in a **separate** new
+stack (each fixture requires an empty catalog):
+
+1. New local PG17 stack, migrations applied, demo seed off.
+2. Loopback API URL and the local anon key only.
+3. A synthetic owner such as `e2e-tyre-owner@example.test`, created locally.
+4. Load through the container socket:
+   ```bash
+   docker exec -i supabase_db_<project_id> \
+     psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+          -v owner_email=e2e-tyre-owner@example.test \
+     < tests/e2e/fixtures/tyre-results.sql
+   ```
+   Same guards and rollback as the rim fixture; it also aborts unless exactly
+   15 rows were inserted.
+5. Run only the tyre spec with `E2E_TYRE_FIXTURE=loaded`.
+6. Throw the stack away: `supabase stop --no-backup`.
