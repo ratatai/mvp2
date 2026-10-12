@@ -122,3 +122,34 @@ runs once, in the desktop project, in serial mode. It needs no SQL fixture.
    `supabase stop --no-backup`.
 
 Creating the user is not automated by any workflow yet.
+
+## Cross-user isolation script (`cross-user-isolation.mjs`)
+
+A plain Node script (no browser) that checks RLS on `listings` and
+`listing_images` and the `listing-images` Storage policies with two real
+users. Owner A creates one draft tyre, one 1x1 PNG at
+`<A id>/<listing id>/e2e-iso-owner.png` and one image row; user B then tries
+to read, update, publish, reassign and delete the listing, insert/update/delete
+image metadata, and upload, replace, move and remove the object. A zero-row
+"success" counts as refused only after A re-reads unchanged rows; after B's
+`remove()`, A's object must still be byte-identical. Public reads of the image
+file are not tested: the bucket is public by design.
+
+1. A **new** local stack (PG17, migrations applied, Storage running, demo seed
+   off so the catalog is empty).
+2. Two confirmed synthetic users created in that stack only, on
+   `example.test` or `example.invalid`, each with a `profiles` row.
+3. Run with only these variables (no env file is loaded):
+   ```bash
+   E2E_ISO_SUPABASE_URL=http://127.0.0.1:54321 \
+   E2E_ISO_ANON_KEY=<local anon key> \
+   E2E_ISO_A_EMAIL=iso-a@example.test E2E_ISO_A_PASSWORD=<...> \
+   E2E_ISO_B_EMAIL=iso-b@example.test E2E_ISO_B_PASSWORD=<...> \
+   node tests/e2e/cross-user-isolation.mjs
+   ```
+   Before any request it refuses a non-loopback or non-`http` URL, a
+   service_role/secret key, and non-synthetic or identical emails. Its fetch
+   refuses other origins and redirects; sessions are not persisted. It prints
+   check names and status codes only. Exit 0 means all 8 checks passed.
+4. The rows and object are left for inspection; discard the stack with
+   `supabase stop --no-backup`. No workflow runs this yet.
