@@ -1,0 +1,285 @@
+# Local-only browser checks for the category-first search (PR #8).
+#
+# Runs tests/e2e/wheel-results.spec.ts against a NEW, disposable Supabase
+# stack started on this runner. It never talks to a hosted project: no
+# secrets, no access token, no `supabase link`, `db push` or other remote
+# command. See E2E_SAFETY.md in the application checkout.
+#
+# Manual trigger only. The application commit is fixed below and cannot be
+# changed from the dispatch form; review and edit APP_SHA in a PR instead.
+# A run uses normal GitHub Actions minutes (not the Claude API).
+
+name: Local wheel result E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-search-e2e
+  cancel-in-progress: false
+
+env:
+  # Reviewed head of PR #8 (feature/category-first-search).
+  APP_SHA: 4a93c762aca9bc7d8f3ed64c8e892333a261d0a7
+  # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
+  SUPABASE_CLI_VERSION: '2.120.0'
+  # Pin legacy Docker backend: container IDs and status -o env below depend on it.
+  SUPABASE_EXPERIMENTAL_STACK: '0'
+  SUPABASE_NO_KEYRING: '1'
+  SUPABASE_PROJECT_ID: ratatai-marketplace
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  search-e2e:
+    name: populated complete-wheel results (desktop, mobile, narrow)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require a verified, pinned Supabase CLI version
+        run: |
+          if ! [[ "$SUPABASE_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SUPABASE_CLI_VERSION is not a pinned X.Y.Z release. Set a verified version before dispatching."
+            exit 1
+          fi
+
+      - name: Check out the reviewed application commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.APP_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Confirm the checked-out commit
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$APP_SHA" ]; then
+            echo "::error::Checked out $actual, expected $APP_SHA."
+            exit 1
+          fi
+
+      - name: Reject production env files, linked metadata and remote credentials
+        run: |
+          set -u
+          problems=0
+          for f in .env .env.local .env.production .env.*.local supabase/config.json; do
+            if [ -e "$f" ]; then echo "::error::$f must not exist in this run."; problems=1; fi
+          done
+          for p in supabase/.temp supabase/.branches; do
+            if [ -e "$p" ]; then echo "::error::$p (linked Supabase metadata) must not exist."; problems=1; fi
+          done
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF SUPABASE_SERVICE_ROLE_KEY NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -n "${!v:-}" ]; then echo "::error::$v must not be set before the local stack starts."; problems=1; fi
+          done
+          if ! grep -Eq '^major_version = 17$' supabase/config.toml; then
+            echo "::error::supabase/config.toml does not set db.major_version = 17."; problems=1
+          fi
+          exit "$problems"
+
+      - name: Assert Docker is available and no Supabase stack exists
+        id: fresh
+        run: |
+          docker info --format '{{.ServerVersion}}' >/dev/null
+          if [ -n "$(docker ps -aq --filter 'name=supabase_')" ]; then
+            echo "::error::Found existing supabase_* containers; expected a fresh runner."
+            exit 1
+          fi
+          if [ -n "$(docker volume ls -q --filter 'name=supabase_')" ]; then
+            echo "::error::Found existing Supabase volumes; expected a fresh runner."
+            exit 1
+          fi
+          for port in 54321 54322 3100; do
+            if ss -ltn "( sport = :$port )" | grep -q LISTEN; then
+              echo "::error::Port $port is already in use."
+              exit 1
+            fi
+          done
+
+          echo 'allowed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Disable the demo seed for this disposable database
+        # Runner-only edit to the checkout; never committed. Migrations stay
+        # enabled and are applied in their checked-in order by `supabase start`.
+        run: |
+          awk '
+            /^\[/ { section = $0 }
+            section == "[db.seed]" && /^enabled = true$/ { print "enabled = false"; changed = 1; next }
+            { print }
+            END { if (!changed) exit 1 }
+          ' supabase/config.toml > "$RUNNER_TEMP/config.toml"
+          mv "$RUNNER_TEMP/config.toml" supabase/config.toml
+          git diff --stat -- supabase/config.toml
+          echo "Migrations, in apply order:"
+          ls -1 supabase/migrations | LC_ALL=C sort
+
+      - name: Install the pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Confirm the CLI version
+        run: |
+          installed="$(supabase --version | tr -d '[:space:]')"
+          if [ "$installed" != "$SUPABASE_CLI_VERSION" ]; then
+            echo "::error::Installed Supabase CLI $installed, expected $SUPABASE_CLI_VERSION."
+            exit 1
+          fi
+
+      - name: Start a new disposable local stack (applies migrations)
+        # Fails the job if any migration fails; nothing is skipped or retried.
+        # start prints local keys; capture all output privately and delete it.
+        # Failure reports its exit status without publishing key-bearing logs.
+        run: |
+          set +x
+          umask 077
+          start_log="$(mktemp "$RUNNER_TEMP/start.XXXXXX")"
+          trap 'rm -f "$start_log"' EXIT
+          if supabase start -x studio,edge-runtime,logflare,vector >"$start_log" 2>&1; then
+            echo "Disposable stack started."
+          else
+            code=$?
+            echo "::error::Local stack start/migrations failed (exit $code); raw output suppressed because it can contain keys."
+            exit "$code"
+          fi
+
+      - name: Export the local API URL and anon key only
+        # `supabase status` output contains other keys (service_role, JWT
+        # secret, DB URL). It is written to a private temp file, never printed
+        # or sourced, and deleted straight after two values are read from it.
+        run: |
+          set +x
+          umask 077
+          status_file="$(mktemp "$RUNNER_TEMP/status.XXXXXX")"
+          trap 'rm -f "$status_file"' EXIT
+          if ! supabase status -o env >"$status_file" 2>/dev/null; then
+            echo "::error::supabase status failed (output suppressed: it contains keys)."
+            exit 1
+          fi
+          read_value() {
+            grep -E "^$1=" "$status_file" | head -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'
+          }
+          api_url="$(read_value API_URL)"
+          anon_key="$(read_value ANON_KEY)"
+          if [ -z "$api_url" ] || [ -z "$anon_key" ]; then
+            echo "::error::Could not read API_URL and ANON_KEY from local status."
+            exit 1
+          fi
+          echo "::add-mask::$anon_key"
+          if ! [[ "$api_url" =~ ^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$ ]]; then
+            echo "::error::Local API URL is not a loopback http URL."
+            exit 1
+          fi
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$api_url"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key"
+          } >>"$GITHUB_ENV"
+          echo "Local API URL: $api_url"
+
+      - name: Assert loopback URL and a real local Postgres 17
+        run: |
+          if ! [[ "$NEXT_PUBLIC_SUPABASE_URL" =~ ^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$ ]]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is not loopback."
+            exit 1
+          fi
+          db_container="supabase_db_${SUPABASE_PROJECT_ID}"
+          version_num="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'show server_version_num' | tr -d '[:space:]')"
+          echo "Local server_version_num: $version_num"
+          if ! [[ "$version_num" =~ ^17[0-9]{4}$ ]]; then
+            echo "::error::Local database is not Postgres 17."
+            exit 1
+          fi
+          applied="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from supabase_migrations.schema_migrations' | tr -d '[:space:]')"
+          expected="$(ls -1 supabase/migrations/*.sql | wc -l | tr -d '[:space:]')"
+          echo "Applied migrations: $applied / $expected"
+          if [ "$applied" != "$expected" ]; then
+            echo "::error::Not every checked-in migration was applied."
+            exit 1
+          fi
+          listings="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from public.listings' | tr -d '[:space:]')"
+          echo "Listings in fresh database: $listings"
+          test "$listings" = 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+
+      - name: Provision one synthetic owner through local Auth
+        # Generated password and session are neither printed nor persisted.
+        run: |
+          set +x
+          node --input-type=module <<'NODE'
+          import { randomBytes } from 'node:crypto';
+          import { createClient } from '@supabase/supabase-js';
+          const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
+          if (url.origin !== 'http://127.0.0.1:54321') throw new Error('Expected fixed loopback API');
+          const localFetch = (input, init) => {
+            const target = new URL(typeof input === 'string' ? input : input.url ?? String(input));
+            if (target.origin !== url.origin) throw new Error('Nonlocal Auth request refused');
+            return fetch(input, { ...init, redirect: 'error' });
+          };
+          const client = createClient(url.origin, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+            global: { fetch: localFetch }
+          });
+          const { data, error } = await client.auth.signUp({
+            email: 'e2e-wheel-owner@example.test',
+            password: randomBytes(32).toString('hex'),
+            options: { data: { display_name: 'E2E wheel owner', preferred_language: 'lt' } }
+          });
+          if (error || !data.user?.id || data.user.email !== 'e2e-wheel-owner@example.test') {
+            throw new Error('Synthetic local signup failed; response suppressed');
+          }
+          console.log('Synthetic local owner provisioned; credentials discarded.');
+          NODE
+
+      - name: Load guarded fixture only into the fresh local container
+        run: |
+          db_container="supabase_db_${SUPABASE_PROJECT_ID}"
+          docker exec -i "$db_container" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -v owner_email=e2e-wheel-owner@example.test < tests/e2e/fixtures/wheel-results.sql
+          rows="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from public.listings' | tr -d '[:space:]')"
+          public_rows="$(docker exec "$db_container" psql -U postgres -d postgres -tAc "select count(*) from public.listings where status = 'active' and moderation_status = 'approved'" | tr -d '[:space:]')"
+          test "$rows" = 15
+          test "$public_rows" = 13
+          echo 'Fixture ready: 15 synthetic records, 13 public across categories.'
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run populated wheel result checks (desktop, mobile, narrow)
+        # playwright.config.ts re-checks the loopback guard and builds its own
+        # server on 127.0.0.1:3100. The mutating lifecycle spec is not run and
+        # E2E_EMAIL/E2E_PASSWORD are not set.
+        env:
+          E2E_WHEEL_FIXTURE: loaded
+        run: >-
+          npx playwright test tests/e2e/wheel-results.spec.ts
+          --project=desktop --project=mobile --project=narrow --trace=off
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-results-e2e-report
+          retention-days: 3
+          if-no-files-found: ignore
+          # Tracing is disabled at the CLI and trace archives are excluded. No env, status or database files are uploaded.
+          path: |
+            playwright-report/
+            test-results/
+            !**/*.zip
+            !**/trace/**
+
+      - name: Stop and discard the local stack
+        # Never stop anything if the fresh-runner guard rejected this host.
+        if: always() && steps.fresh.outputs.allowed == 'true'
+        run: |
+          supabase stop --no-backup >/dev/null 2>&1
