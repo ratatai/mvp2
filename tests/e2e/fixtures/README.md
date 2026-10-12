@@ -103,3 +103,22 @@ stack (each fixture requires an empty catalog):
    15 rows were inserted.
 5. Run only the tyre spec with `E2E_TYRE_FIXTURE=loaded`.
 6. Throw the stack away: `supabase stop --no-backup`.
+
+## Seller lifecycle spec (`listing-lifecycle.spec.ts`)
+
+This spec writes data (three listings, image rows, Storage objects), so it
+runs once, in the desktop project, in serial mode. It needs no SQL fixture.
+
+1. A **new** local Supabase stack (PG17, migrations applied, loopback URL and
+   local anon key), as `E2E_SAFETY.md` requires. Storage must be running.
+2. A synthetic, confirmed user created in that stack only, whose address is on
+   `example.test` or `example.invalid` (e.g. `seller@example.invalid`), with a
+   `profiles` row. Pass it as `E2E_EMAIL` / `E2E_PASSWORD`.
+   - Both unset: the spec is skipped.
+   - Any other domain: the spec fails before sign-in.
+3. Run only `listing-lifecycle.spec.ts --project=desktop`.
+4. The spec archives its listings and asserts the archived state after a
+   reload; it does not delete them. Discard the stack afterwards with
+   `supabase stop --no-backup`.
+
+Creating the user is not automated by any workflow yet.
