@@ -153,3 +153,17 @@ file are not tested: the bucket is public by design.
    check names and status codes only. Exit 0 means all 8 checks passed.
 4. The rows and object are left for inspection; discard the stack with
    `supabase stop --no-backup`. No workflow runs this yet.
+
+## Auth session spec (`auth-session.spec.ts`)
+
+Anonymous → `/lt/naujas-skelbimas` redirects to login with `next`; UI login
+returns there; one reload keeps the session; UI logout on `/lt/mano`; the page
+is denied again. RU/EN anonymous redirects are checked without signing in.
+
+1. A **new** local stack with a loopback URL and the local anon key.
+2. One confirmed synthetic user on `example.test` or `example.invalid`,
+   created in that stack only, passed as `E2E_EMAIL`/`E2E_PASSWORD`. The spec
+   never creates users; without both variables the login test is skipped.
+3. Run it on its own, not alongside `listing-lifecycle.spec.ts`: logout
+   revokes the account's sessions. It runs in the desktop project only.
+4. Discard the stack with `supabase stop --no-backup`. No workflow runs this yet.
