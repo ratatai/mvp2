@@ -34,7 +34,7 @@ no ORM, no analytics SDK.
 
 ## Quick start
 
-Use Node.js 22.x (at least 22.12), 24.x, or 26+ (Vitest 5 requirement). Node 24.x is used for the current release checks.
+Use Node.js 22.x (at least 22.13), 24.x, or 26+ (Vitest 5 requirement). Node 24.x is used for the current release checks.
 
 ```bash
 # 1. Install (exact versions from package-lock.json)
