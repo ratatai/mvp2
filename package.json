@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
-  "description": "RATATAI — open source marketplace for tires, rims and complete wheels (Lithuania).",
+  "description": "RATATAI \u2014 open source marketplace for tires, rims and complete wheels (Lithuania).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -41,5 +41,10 @@
   },
   "engines": {
     "node": ">=18.18.0"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.28"
+    }
   }
 }
