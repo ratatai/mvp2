@@ -16,7 +16,7 @@ export class VisionError extends Error {}
 
 const TIMEOUT_MS = 90_000;
 
-async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
+export async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },

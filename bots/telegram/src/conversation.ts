@@ -5,12 +5,16 @@
  * the flow is unit-tested with a fake.
  */
 
-import { buildDescription, buildTitle, displayValue, toListingDraft } from './compose';
+import { buildDescription, buildTitle, displayValue, positionCard, toListingDraft } from './compose';
 import { applyPatch, clearKeys, type DraftKey, type TyreDraft } from './draft';
 import { normalizeReadings } from './extraction/normalize';
 import type { VisionImage, VisionProvider } from './extraction/types';
 import { SITE_DICT, t, type Lang } from './i18n';
 import { buildQuestions, nextQuestion, suggestionFor, type Question, type QuestionId } from './questions';
+import { describeFilter, parseQuery } from './search/query';
+import type { SpeechToText } from './search/speech';
+import type { Understanding } from './search/understand';
+import { foldText, PAGE_SIZE, type Position, type PositionStore, type SearchFilter } from './store';
 import type { InlineKeyboard } from './telegram';
 
 export const MAX_PHOTOS = 10;
@@ -19,9 +23,23 @@ export interface Messenger {
   send(text: string, keyboard?: InlineKeyboard): Promise<number>;
   edit(messageId: number, text: string, keyboard?: InlineKeyboard): Promise<void>;
   clearButtons(messageId: number): Promise<void>;
+  sendPhoto(fileId: string, caption: string, keyboard?: InlineKeyboard): Promise<number>;
+  sendAlbum(fileIds: readonly string[]): Promise<void>;
 }
 
 export type PhotoLoader = (fileId: string) => Promise<VisionImage>;
+
+export interface Services {
+  readonly vision: VisionProvider | null;
+  readonly loadPhoto: PhotoLoader;
+  readonly store: PositionStore;
+  readonly speech: SpeechToText | null;
+  readonly understanding: Understanding | null;
+  /** Telegram user id of the person talking to the bot. */
+  readonly userId: number;
+  /** Called after a position is saved (e.g. to back up its photos to disk). */
+  readonly afterSave?: (id: number, photos: readonly string[]) => Promise<void>;
+}
 
 type Phase = 'collecting' | 'analysing' | 'asking' | 'summary' | 'done';
 
@@ -36,6 +54,8 @@ export interface Session {
   current?: { id: QuestionId; mode: 'confirm' | 'ask'; messageId: number };
   /** Remembered across listings so a shop does not retype its city. */
   lastCity?: string;
+  /** The last search, for "more" paging. */
+  lastSearch?: { filter: SearchFilter; page: number };
 }
 
 export function newSession(lang: Lang, lastCity?: string): Session {
@@ -48,6 +68,13 @@ export function newSession(lang: Lang, lastCity?: string): Session {
     settled: new Set(),
     ...(lastCity ? { lastCity } : {}),
   };
+}
+
+/** Starts a new listing but keeps what belongs to the person, not the listing. */
+function resetListing(s: Session): void {
+  const { lang, lastCity, lastSearch } = s;
+  for (const key of Object.keys(s)) delete (s as unknown as Record<string, unknown>)[key];
+  Object.assign(s, newSession(lang, lastCity), lastSearch ? { lastSearch } : {});
 }
 
 /** Fields that only make sense together with another one. */
@@ -63,8 +90,7 @@ export class Conversation {
   constructor(
     readonly session: Session,
     private readonly io: Messenger,
-    private readonly vision: VisionProvider | null,
-    private readonly loadPhoto: PhotoLoader,
+    private readonly services: Services,
     private readonly currentYear: number
   ) {
     this.questions = buildQuestions(currentYear);
@@ -79,14 +105,14 @@ export class Conversation {
   /* ------------------------------------------------------------------ */
 
   async start(): Promise<void> {
-    await this.io.send(`${this.tx.welcome}\n\n${this.tx.tips}`);
+    await this.io.send(`${this.tx.welcome}\n\n${this.tx.tips}\n\n${this.tx.search}`);
   }
 
   async onPhoto(fileId: string): Promise<void> {
     const s = this.session;
     if (s.phase !== 'collecting') {
       // New photos after a listing (or mid-way) start a fresh listing.
-      Object.assign(s, newSession(s.lang, s.lastCity));
+      resetListing(s);
     }
     if (s.photos.length >= MAX_PHOTOS) {
       await this.io.send(this.tx.tooManyPhotos);
@@ -102,17 +128,13 @@ export class Conversation {
     }
   }
 
+  /** Text is an answer while a question is open; otherwise it is a stock search. */
   async onText(text: string): Promise<void> {
     const s = this.session;
-    if (s.phase === 'collecting') {
-      await this.io.send(s.photos.length === 0 ? this.tx.noPhotos : this.tx.photoReceived(s.photos.length));
+    if (s.phase !== 'asking' || s.current === undefined) {
+      await this.search(text, false);
       return;
     }
-    if (s.phase === 'done') {
-      await this.io.send(this.tx.welcome);
-      return;
-    }
-    if (s.phase !== 'asking' || s.current === undefined) return;
 
     const q = this.question(s.current.id);
     if (q.parse === undefined) {
@@ -129,15 +151,53 @@ export class Conversation {
     await this.askNext();
   }
 
+  /** Voice: an answer while a question is open; otherwise a stock search. */
+  async onVoice(audio: Uint8Array): Promise<void> {
+    const s = this.session;
+    if (this.services.speech === null) {
+      await this.io.send(this.tx.voiceOff);
+      return;
+    }
+    let transcript: string;
+    try {
+      transcript = await this.services.speech.transcribe(
+        audio,
+        'voice.ogg',
+        s.lang,
+        this.services.store.knownBrands()
+      );
+    } catch (error) {
+      console.error('[speech]', error instanceof Error ? error.message : error);
+      await this.io.send(this.tx.voiceFailed);
+      return;
+    }
+    if (transcript.length === 0) {
+      await this.io.send(this.tx.voiceFailed);
+      return;
+    }
+    await this.io.send(this.tx.heard(transcript));
+
+    if (s.phase === 'asking' && s.current !== undefined) {
+      await this.voiceAnswer(this.question(s.current.id), transcript);
+      return;
+    }
+    await this.search(transcript, true);
+  }
+
   async onButton(data: string): Promise<void> {
     const s = this.session;
+
+    // Stock actions work at any point of the conversation.
+    if (data === 'more') return this.showMore();
+    const stock = /^(ph|sold|act|del|delok):(\d+)$/.exec(data);
+    if (stock) return this.stockAction(stock[1] ?? '', Number(stock[2]));
 
     if (data === 'analyse') {
       if (s.phase === 'collecting') await this.analyse();
       return;
     }
     if (data === 'restart') {
-      Object.assign(s, newSession(s.lang, s.lastCity));
+      resetListing(s);
       await this.io.send(this.tx.restarted);
       return;
     }
@@ -186,12 +246,13 @@ export class Conversation {
 
     let summaryLines: string[] = [];
     try {
-      if (this.vision === null) throw new Error('no vision provider');
-      const images = await Promise.all(s.photos.map((id) => this.loadPhoto(id)));
-      const readings = await this.vision.readPhotos(images);
+      const { vision, loadPhoto } = this.services;
+      if (vision === null) throw new Error('no vision provider');
+      const images = await Promise.all(s.photos.map((id) => loadPhoto(id)));
+      const readings = await vision.readPhotos(images);
       const result = normalizeReadings(readings, this.currentYear);
       if (result.notTyres) {
-        Object.assign(s, newSession(s.lang, s.lastCity));
+        resetListing(s);
         await this.io.send(this.tx.notTyres);
         return;
       }
@@ -200,7 +261,7 @@ export class Conversation {
       s.suggestions = result.suggestions;
       summaryLines = this.describe(s.draft);
       await this.io.send(
-        summaryLines.length > 0 ? `${this.tx.found}\n${summaryLines.join('\n')}` : this.tx.foundNothing
+        summaryLines.length > 0 ? `${this.tx.readFromPhotos}\n${summaryLines.join('\n')}` : this.tx.foundNothing
       );
     } catch (error) {
       console.error('[vision]', error instanceof Error ? error.message : error);
@@ -305,9 +366,186 @@ export class Conversation {
     }
     s.phase = 'done';
     if (s.draft.city) s.lastCity = s.draft.city;
-    await this.io.send(this.tx.final);
-    await this.io.send(`${this.tx.textLt}\n\n${buildTitle(s.draft, 'lt')}\n\n${buildDescription(s.draft, 'lt')}`);
-    await this.io.send(`${this.tx.textRu}\n\n${buildTitle(s.draft, 'ru')}\n\n${buildDescription(s.draft, 'ru')}`);
+
+    const texts = {
+      titleLt: buildTitle(s.draft, 'lt'),
+      titleRu: buildTitle(s.draft, 'ru'),
+      descriptionLt: buildDescription(s.draft, 'lt'),
+      descriptionRu: buildDescription(s.draft, 'ru'),
+    };
+    const id = this.services.store.add({
+      draft: s.draft,
+      ...texts,
+      photos: [...s.photos],
+      createdBy: this.services.userId,
+    });
+    if (this.services.afterSave) {
+      // A failed backup must not lose the saved position.
+      await this.services.afterSave(id, [...s.photos]).catch((error: unknown) =>
+        console.error('[backup]', error instanceof Error ? error.message : error)
+      );
+    }
+
+    await this.io.send(`${this.tx.saved(id)}\n${this.tx.final}`);
+    await this.io.send(`${this.tx.textLt}\n\n${texts.titleLt}\n\n${texts.descriptionLt}`);
+    await this.io.send(`${this.tx.textRu}\n\n${texts.titleRu}\n\n${texts.descriptionRu}`);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Voice answers                                                       */
+  /* ------------------------------------------------------------------ */
+
+  private async voiceAnswer(q: Question, transcript: string): Promise<void> {
+    const s = this.session;
+    const said = foldText(transcript);
+    const current = s.current;
+    if (current === undefined) return;
+
+    // "Taip / Да" on a confirmation, or a choice said out loud.
+    if (current.mode === 'confirm') {
+      if (/^(taip|tinka|teisingai|да|верно|правильно|yes)\b/.test(said)) return this.onButton('y');
+      if (/^(ne|нет|no)\b/.test(said)) return this.onButton('n');
+    }
+    const choices = this.choicesFor(q);
+    const choiceIndex = choices.findIndex((choice) => {
+      const label = foldText(choice.label);
+      return said === label || said.startsWith(label) || (label.length >= 4 && said.startsWith(label.slice(0, 4)));
+    });
+    if (choiceIndex !== -1) return this.onButton(`c:${choiceIndex}`);
+    if (!q.required && this.tx.skipWords.some((word) => said === foldText(word))) return this.onButton('skip');
+
+    if (q.parse === undefined) {
+      await this.io.send(this.tx.useText);
+      return;
+    }
+    let patch = q.parse(transcript, s.draft);
+    if (patch === null && this.services.understanding !== null) {
+      try {
+        const written = await this.services.understanding.normaliseAnswer(q.prompt(s.lang), transcript);
+        patch = q.parse(written, s.draft);
+      } catch (error) {
+        console.error('[understand]', error instanceof Error ? error.message : error);
+      }
+    }
+    if (patch === null) {
+      await this.io.send(this.tx.invalid);
+      return;
+    }
+    await this.io.clearButtons(current.messageId);
+    this.answer(q, patch);
+    await this.askNext();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Stock search                                                        */
+  /* ------------------------------------------------------------------ */
+
+  async search(phrase: string, spoken: boolean): Promise<void> {
+    const { store, understanding } = this.services;
+    const brands = store.knownBrands();
+    const parsed = parseQuery(phrase, brands);
+    let filter: SearchFilter = parsed.filter;
+
+    // Spoken phrases, or typed ones with words the plain parser did not get,
+    // go to the language model; its answer is range-checked.
+    if (understanding !== null && filter.id === undefined && (spoken || parsed.leftover.length > 0)) {
+      try {
+        const understood = await understanding.toFilter(phrase, brands);
+        if (Object.keys(understood).length > 0) filter = understood;
+      } catch (error) {
+        console.error('[understand]', error instanceof Error ? error.message : error);
+      }
+    }
+    await this.runSearch(filter, 0);
+  }
+
+  async showAll(): Promise<void> {
+    await this.runSearch({}, 0);
+  }
+
+  private async runSearch(filter: SearchFilter, page: number): Promise<void> {
+    const { store } = this.services;
+    let result = store.search(filter, page);
+    let used = filter;
+
+    // Free words that match nothing should not hide real matches by size/season.
+    if (page === 0 && result.total === 0 && filter.text && Object.keys(filter).length > 1) {
+      const { text, ...rest } = filter;
+      const relaxed = store.search(rest, 0);
+      if (relaxed.total > 0) {
+        await this.io.send(this.tx.relaxed(text));
+        result = relaxed;
+        used = rest;
+      }
+    }
+    this.session.lastSearch = { filter: used, page };
+
+    if (page === 0) {
+      await this.io.send(
+        result.total === 0
+          ? `${this.tx.found(describeFilter(used, this.session.lang), 0)}\n${this.tx.nothingFound}`
+          : this.tx.found(describeFilter(used, this.session.lang), result.total)
+      );
+    }
+    for (const position of result.items) await this.sendCard(position);
+
+    if ((page + 1) * PAGE_SIZE < result.total) {
+      await this.io.send(`${(page + 1) * PAGE_SIZE} / ${result.total}`, [[{ text: this.tx.more, callback_data: 'more' }]]);
+    }
+  }
+
+  private async showMore(): Promise<void> {
+    const last = this.session.lastSearch;
+    if (last === undefined) return;
+    await this.runSearch(last.filter, last.page + 1);
+  }
+
+  private cardKeyboard(p: Position): InlineKeyboard {
+    const rows: { text: string; callback_data: string }[][] = [];
+    if (p.photos.length > 1) rows.push([{ text: this.tx.allPhotos(p.photos.length), callback_data: `ph:${p.id}` }]);
+    rows.push([
+      p.status === 'active'
+        ? { text: this.tx.markSold, callback_data: `sold:${p.id}` }
+        : { text: this.tx.markActive, callback_data: `act:${p.id}` },
+      { text: this.tx.remove, callback_data: `del:${p.id}` },
+    ]);
+    return rows;
+  }
+
+  private async sendCard(p: Position): Promise<void> {
+    const caption = positionCard(p, this.session.lang, this.tx.soldMark);
+    const first = p.photos[0];
+    if (first === undefined) await this.io.send(caption, this.cardKeyboard(p));
+    else await this.io.sendPhoto(first, caption, this.cardKeyboard(p));
+  }
+
+  private async stockAction(action: string, id: number): Promise<void> {
+    const { store } = this.services;
+    const p = store.get(id);
+    if (p === null) {
+      await this.io.send(this.tx.notFound);
+      return;
+    }
+    switch (action) {
+      case 'ph':
+        await this.io.sendAlbum(p.photos);
+        return;
+      case 'sold':
+        store.setStatus(id, 'sold');
+        await this.io.send(this.tx.statusSold(id), [[{ text: this.tx.markActive, callback_data: `act:${id}` }]]);
+        return;
+      case 'act':
+        store.setStatus(id, 'active');
+        await this.io.send(this.tx.statusActive(id));
+        return;
+      case 'del':
+        await this.io.send(this.tx.confirmDelete(id), [[{ text: this.tx.deleteYes, callback_data: `delok:${id}` }]]);
+        return;
+      case 'delok':
+        store.delete(id);
+        await this.io.send(this.tx.deleted(id));
+        return;
+    }
   }
 
   /* ------------------------------------------------------------------ */

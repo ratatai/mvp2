@@ -23,6 +23,8 @@ export interface TgMessage {
   readonly photo?: readonly TgPhotoSize[];
   readonly document?: { readonly file_id: string; readonly mime_type?: string; readonly file_size?: number };
   readonly media_group_id?: string;
+  readonly voice?: { readonly file_id: string; readonly duration: number; readonly file_size?: number };
+  readonly audio?: { readonly file_id: string; readonly duration: number; readonly file_size?: number };
 }
 
 export interface TgCallbackQuery {
@@ -80,6 +82,28 @@ export class TelegramClient {
       chat_id: chatId,
       text,
       ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    });
+  }
+
+  sendPhoto(chatId: number, fileId: string, caption: string, keyboard?: InlineKeyboard): Promise<TgMessage> {
+    return this.call<TgMessage>('sendPhoto', {
+      chat_id: chatId,
+      photo: fileId,
+      caption,
+      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    });
+  }
+
+  /** Sends up to 10 already-uploaded photos as one album. */
+  async sendAlbum(chatId: number, fileIds: readonly string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+    if (fileIds.length === 1) {
+      await this.call('sendPhoto', { chat_id: chatId, photo: fileIds[0] });
+      return;
+    }
+    await this.call('sendMediaGroup', {
+      chat_id: chatId,
+      media: fileIds.slice(0, 10).map((id) => ({ type: 'photo', media: id })),
     });
   }
 

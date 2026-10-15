@@ -168,3 +168,29 @@ export function toListingDraft(d: TyreDraft): DraftParseResult {
     specs,
   });
 }
+
+/** Short caption for a stock position in search results (fits Telegram's 1024-char limit). */
+export function positionCard(
+  p: { id: number; status: 'active' | 'sold'; draft: TyreDraft; titleLt: string; titleRu: string },
+  lang: Lang,
+  soldMark: string
+): string {
+  const d = p.draft;
+  const lines = [`#${p.id} · ${lang === 'lt' ? p.titleLt : p.titleRu}`];
+  const main = [
+    displayValue('quantity', d, lang),
+    displayValue('price', d, lang) && `💶 ${displayValue('price', d, lang)}`,
+    d.city && `📍 ${d.city}`,
+  ].filter(Boolean);
+  if (main.length > 0) lines.push(main.join(' · '));
+  const extra = [
+    d.condition && SITE_DICT[lang].condition[d.condition],
+    d.tread_depth !== undefined && `${lang === 'lt' ? 'protektorius' : 'протектор'} ${displayValue('tread_depth', d, lang)}`,
+    d.manufacturing_year !== undefined && `${d.manufacturing_year}`,
+    d.load_index !== undefined && d.speed_index !== undefined && `${d.load_index}${d.speed_index}`,
+  ].filter(Boolean);
+  if (extra.length > 0) lines.push(extra.join(' · '));
+  if (d.defects) lines.push(`⚠️ ${d.defects}`);
+  if (p.status === 'sold') lines.unshift(`❌ ${soldMark}`);
+  return lines.join('\n').slice(0, 1024);
+}

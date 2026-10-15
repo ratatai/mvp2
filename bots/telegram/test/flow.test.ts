@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildDescription, buildTitle, toListingDraft } from '../src/compose';
-import { Conversation, newSession, type Messenger } from '../src/conversation';
+import { Conversation, newSession, type Messenger, type Services } from '../src/conversation';
 import { coerceReadings } from '../src/extraction/coerce';
 import { normalizeReadings } from '../src/extraction/normalize';
 import type { PhotoReadings, VisionProvider } from '../src/extraction/types';
+import { PositionStore } from '../src/store';
 import type { InlineKeyboard } from '../src/telegram';
 
 const YEAR = 2026;
@@ -136,6 +137,13 @@ class FakeChat implements Messenger {
   }
   async edit() {}
   async clearButtons() {}
+  async sendPhoto(_fileId: string, caption: string, keyboard?: InlineKeyboard) {
+    return this.send(`[photo] ${caption}`, keyboard);
+  }
+  readonly albums: (readonly string[])[] = [];
+  async sendAlbum(fileIds: readonly string[]) {
+    this.albums.push(fileIds);
+  }
   last() {
     const item = this.log[this.log.length - 1];
     assert.ok(item);
@@ -152,12 +160,25 @@ function vision(r: PhotoReadings): VisionProvider {
   return { name: 'fake', readPhotos: async () => r };
 }
 
+function services(overrides: Partial<Services> = {}): Services {
+  return {
+    vision: null,
+    loadPhoto: async () => ({ mediaType: 'image/jpeg', base64: '' }),
+    store: new PositionStore(':memory:'),
+    speech: null,
+    understanding: null,
+    userId: 1,
+    ...overrides,
+  };
+}
+
 test('flow: photos → read → confirm doubts → ask gaps → LT and RU texts', async () => {
   const chat = new FakeChat();
+  const store = new PositionStore(':memory:');
   const conv = new Conversation(
     newSession('lt'),
     chat,
-    vision(
+    services({ store, vision: vision(
       readings({
         brand: { value: 'Michelin', confidence: 'high' },
         size: { value: '205/55 R16', confidence: 'high' },
@@ -168,8 +189,7 @@ test('flow: photos → read → confirm doubts → ask gaps → LT and RU texts'
         run_flat: { value: false, confidence: 'high' },
         tyres_visible: 4,
       })
-    ),
-    async () => ({ mediaType: 'image/jpeg', base64: '' }),
+    ) }),
     YEAR
   );
 
@@ -210,6 +230,13 @@ test('flow: photos → read → confirm doubts → ask gaps → LT and RU texts'
   assert.match(ru, /Летние шины|Б\/у летние шины/);
   assert.match(ru, /Год выпуска: 2021 \(DOT 3021\)/);
   assert.match(ru, /Цена: 160 € за все 4 шт\./);
+
+  // Saved to the stock with its photos.
+  assert.ok(chat.log.some((m) => m.text.includes('Išsaugota bazėje kaip #1')));
+  const saved = store.get(1);
+  assert.ok(saved);
+  assert.deepEqual(saved.photos, ['f1', 'f2']);
+  assert.equal(saved.draft.price, 160);
 });
 
 test('flow: vision failure falls back to asking everything', async () => {
@@ -220,7 +247,7 @@ test('flow: vision failure falls back to asking everything', async () => {
       throw new Error('boom');
     },
   };
-  const conv = new Conversation(newSession('ru'), chat, failing, async () => ({ mediaType: 'image/jpeg', base64: '' }), YEAR);
+  const conv = new Conversation(newSession('ru'), chat, services({ vision: failing }), YEAR);
   const original = console.error;
   console.error = () => {};
   try {
@@ -238,7 +265,7 @@ test('flow: vision failure falls back to asking everything', async () => {
 test('flow: editing quantity re-asks the sale unit', async () => {
   const chat = new FakeChat();
   const session = newSession('lt');
-  const conv = new Conversation(session, chat, null, async () => ({ mediaType: 'image/jpeg', base64: '' }), YEAR);
+  const conv = new Conversation(session, chat, services(), YEAR);
   session.phase = 'summary';
   session.draft = {
     brand: 'Nokian', width: 205, aspect_ratio: 55, diameter: 16, season: 'summer',

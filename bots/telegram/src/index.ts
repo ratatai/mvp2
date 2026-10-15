@@ -6,10 +6,17 @@
  * See README.md for every setting.
  */
 
-import { Conversation, newSession, type Messenger, type Session } from './conversation';
+import { mkdirSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
+import { Conversation, newSession, type Messenger, type Services, type Session } from './conversation';
 import { anthropicProvider, openAiCompatibleProvider } from './extraction/providers';
 import type { VisionImage, VisionProvider } from './extraction/types';
 import { langFromTelegram, t, type Lang } from './i18n';
+import { openAiSpeech, type SpeechToText } from './search/speech';
+import { anthropicUnderstanding, type Understanding } from './search/understand';
+import { PositionStore } from './store';
 import { TelegramClient, type TgMessage, type TgUpdate } from './telegram';
 
 function env(name: string): string | undefined {
@@ -46,7 +53,26 @@ function visionFromEnv(): VisionProvider {
   process.exit(1);
 }
 
+function speechFromEnv(): SpeechToText | null {
+  const apiKey = env('OPENAI_API_KEY');
+  if (apiKey === undefined) {
+    console.warn('OPENAI_API_KEY not set: voice messages are disabled.');
+    return null;
+  }
+  return openAiSpeech({ apiKey, model: env('SPEECH_MODEL') ?? 'gpt-4o-transcribe' });
+}
+
+function understandingFromEnv(): Understanding | null {
+  const apiKey = env('ANTHROPIC_API_KEY');
+  if (apiKey === undefined) {
+    console.warn('ANTHROPIC_API_KEY not set: searches use the plain parser only.');
+    return null;
+  }
+  return anthropicUnderstanding({ apiKey, model: env('UNDERSTANDING_MODEL') ?? 'claude-haiku-5-5' });
+}
+
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_VOICE_BYTES = 20 * 1024 * 1024;
 
 function mediaTypeFor(path: string): VisionImage['mediaType'] {
   const lower = path.toLowerCase();
@@ -73,12 +99,37 @@ function photoFileId(message: TgMessage): string | null {
 async function main(): Promise<void> {
   const telegram = new TelegramClient(requireEnv('TELEGRAM_BOT_TOKEN'));
   const vision = visionFromEnv();
+  const speech = speechFromEnv();
+  const understanding = understandingFromEnv();
+  const databasePath = env('DATABASE_PATH') ?? './data/ratatai-bot.sqlite';
+  mkdirSync(dirname(databasePath), { recursive: true });
+  const store = new PositionStore(databasePath);
+  const photoDir = env('PHOTO_DIR');
+
+  // The stock is internal: the bot only answers the people listed here.
   const allowed = new Set(
     (env('ALLOWED_TELEGRAM_USER_IDS') ?? '')
       .split(',')
       .map((id) => id.trim())
       .filter(Boolean)
   );
+  if (allowed.size === 0) {
+    console.warn('ALLOWED_TELEGRAM_USER_IDS is empty: the bot will refuse everyone (and tell them their id).');
+  }
+
+  /** Keeps a copy of a saved position's photos on disk, next to the database. */
+  const backupPhotos = async (id: number, photos: readonly string[]): Promise<void> => {
+    if (photoDir === undefined) return;
+    const dir = join(photoDir, String(id));
+    await mkdir(dir, { recursive: true });
+    let n = 0;
+    for (const fileId of photos) {
+      n += 1;
+      const file = await telegram.downloadFile(fileId);
+      const ext = file.path.split('.').pop() ?? 'jpg';
+      await writeFile(join(dir, `${n}.${ext}`), file.bytes);
+    }
+  };
 
   // In-memory: a restart forgets unfinished drafts (nothing is lost on the site).
   const sessions = new Map<number, Session>();
@@ -90,7 +141,7 @@ async function main(): Promise<void> {
     return { mediaType: mediaTypeFor(file.path), base64: Buffer.from(file.bytes).toString('base64') };
   };
 
-  const conversationFor = (chatId: number, lang: Lang): Conversation => {
+  const conversationFor = (chatId: number, userId: number, lang: Lang): Conversation => {
     let session = sessions.get(chatId);
     if (session === undefined) {
       session = newSession(lang);
@@ -100,8 +151,20 @@ async function main(): Promise<void> {
       send: async (text, keyboard) => (await telegram.sendMessage(chatId, text, keyboard)).message_id,
       edit: (messageId, text, keyboard) => telegram.editMessage(chatId, messageId, text, keyboard),
       clearButtons: (messageId) => telegram.removeKeyboard(chatId, messageId),
+      sendPhoto: async (fileId, caption, keyboard) =>
+        (await telegram.sendPhoto(chatId, fileId, caption, keyboard)).message_id,
+      sendAlbum: (fileIds) => telegram.sendAlbum(chatId, fileIds),
     };
-    return new Conversation(session, io, vision, loadPhoto, new Date().getFullYear());
+    const services: Services = {
+      vision,
+      loadPhoto,
+      store,
+      speech,
+      understanding,
+      userId,
+      afterSave: backupPhotos,
+    };
+    return new Conversation(session, io, services, new Date().getFullYear());
   };
 
   const handle = async (update: TgUpdate): Promise<void> => {
@@ -113,13 +176,13 @@ async function main(): Promise<void> {
     if (message && message.chat.type !== 'private') return;
 
     const lang = sessions.get(chatId)?.lang ?? langFromTelegram(user.language_code);
-    if (allowed.size > 0 && !allowed.has(String(user.id))) {
+    if (!allowed.has(String(user.id))) {
       if (callback) await telegram.answerCallback(callback.id);
-      else await telegram.sendMessage(chatId, t(lang).notAllowed);
+      else await telegram.sendMessage(chatId, `${t(lang).notAllowed}\nID: ${user.id}`);
       return;
     }
 
-    const conversation = conversationFor(chatId, lang);
+    const conversation = conversationFor(chatId, user.id, lang);
 
     if (callback) {
       await telegram.answerCallback(callback.id);
@@ -140,6 +203,17 @@ async function main(): Promise<void> {
     }
     if (text === '/new') {
       await conversation.onButton('restart');
+      return;
+    }
+    if (text === '/all') {
+      await conversation.showAll();
+      return;
+    }
+    const voice = message.voice ?? message.audio;
+    if (voice) {
+      if ((voice.file_size ?? 0) > MAX_VOICE_BYTES) return;
+      const file = await telegram.downloadFile(voice.file_id);
+      await conversation.onVoice(file.bytes);
       return;
     }
     const fileId = photoFileId(message);
