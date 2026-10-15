@@ -14,9 +14,9 @@ export function safeAuthNext(raw: unknown, fallback: string): string {
     if (destination.origin !== origin || destination.pathname.startsWith('//')) {
       return fallback;
     }
+    // Serialize Unicode before Next writes the target to an HTTP header.
+    return destination.pathname + destination.search + destination.hash;
   } catch {
     return fallback;
   }
-
-  return raw;
 }
