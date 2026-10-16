@@ -46,6 +46,7 @@
   "overrides": {
     "next": {
       "postcss": "8.5.28"
-    }
+    },
+    "postcss-selector-parser": "7.1.6"
   }
 }
