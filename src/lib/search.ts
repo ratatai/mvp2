@@ -94,8 +94,22 @@ export function parseRimDiameterQuery(value: string): number | null {
 }
 
 /**
+ * Spec text paths covered by free-text search. Tires and rims keep brand and
+ * model at the top level of specs; complete wheels nest them under `rim` and
+ * `tire`, so those halves are searched too.
+ */
+export const TEXT_SEARCH_SPEC_PATHS = [
+  'specs->>brand',
+  'specs->>model',
+  'specs->rim->>brand',
+  'specs->rim->>model',
+  'specs->tire->>brand',
+  'specs->tire->>model',
+] as const;
+
+/**
  * Builds the PostgREST `or=(...)` expression for a free-text query over the
- * title and the brand stored inside specs.
+ * title, the city and the brand/model stored inside specs.
  */
 export function buildTextSearchExpression(query: string): string {
   const pattern = quoteForPostgrest(`%${escapeLikePattern(normalizeQuery(query))}%`);
@@ -103,7 +117,6 @@ export function buildTextSearchExpression(query: string): string {
   return [
     `title.ilike.${pattern}`,
     `city.ilike.${pattern}`,
-    `specs->>brand.ilike.${pattern}`,
-    `specs->>model.ilike.${pattern}`,
+    ...TEXT_SEARCH_SPEC_PATHS.map((path) => `${path}.ilike.${pattern}`),
   ].join(',');
 }
