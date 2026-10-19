@@ -396,12 +396,27 @@ describe('listingSpecGroups', () => {
 });
 
 describe('listingCardSummary', () => {
+  it.each(LOCALES)('decimal displays agree across cards and nested specs (%s)', (locale) => {
+    const dict = getDictionary(locale);
+    const decimal = locale === 'en' ? '.' : ',';
+    expect(listingCardSummary(tireListing(tire({ ...minimalTireInput, tread_depth: 7.5 })), dict, locale))
+      .toContain(`7${decimal}5 mm`);
+    for (const et of [-20, 0]) {
+      const rimInput = { ...minimalRimInput, rim_width: 8.5, et };
+      const expected = `8${decimal}5Jx18 ET${et}`;
+      expect(rimSpecRows(rim(rimInput), dict, locale))
+        .toContainEqual({ label: dict.specs.size, value: expected });
+      const groups = wheelSpecGroups(wheel({ rim: rimInput, tire: { ...minimalTireInput, diameter: 18 } }), dict, locale);
+      expect(groups[0]?.rows).toContainEqual({ label: dict.specs.size, value: expected });
+    }
+  });
+
   it.each(LOCALES)('tyre summary localizes season (%s)', (locale) => {
     const dict = getDictionary(locale);
     expect(
       listingCardSummary(
         tireListing(tire({ ...minimalTireInput, season: 'winter', tread_depth: 6 })),
-        dict
+        dict, locale
       )
     ).toEqual(['205/55 R16', dict.season.winter, '6 mm']);
   });
@@ -413,7 +428,7 @@ describe('listingCardSummary', () => {
         tireListing(
           tire({ ...minimalTireInput, width: 375, aspect_ratio: 35, diameter: 20 })
         ),
-        dict
+        dict, 'en'
       )
     ).toEqual(['375/35 R20', dict.season.summer]);
   });
@@ -421,17 +436,17 @@ describe('listingCardSummary', () => {
   it('tyre summary keeps zero tread', () => {
     const dict = getDictionary('en');
     expect(
-      listingCardSummary(tireListing(tire({ ...minimalTireInput, tread_depth: 0 })), dict)
+      listingCardSummary(tireListing(tire({ ...minimalTireInput, tread_depth: 0 })), dict, 'en')
     ).toEqual(['205/55 R16', dict.season.summer, '0 mm']);
   });
 
   it.each(LOCALES)('rim summary keeps negative and zero ET (%s)', (locale) => {
     const dict = getDictionary(locale);
     expect(
-      listingCardSummary(rimListing(rim({ ...minimalRimInput, et: -20 })), dict)
+      listingCardSummary(rimListing(rim({ ...minimalRimInput, et: -20 })), dict, locale)
     ).toEqual(['R18', '5x112', 'ET-20', dict.material.alloy]);
     expect(
-      listingCardSummary(rimListing(rim({ ...minimalRimInput, et: 0 })), dict)
+      listingCardSummary(rimListing(rim({ ...minimalRimInput, et: 0 })), dict, locale)
     ).toEqual(['R18', '5x112', 'ET0', dict.material.alloy]);
   });
 
@@ -444,7 +459,7 @@ describe('listingCardSummary', () => {
           tire: { ...minimalTireInput, diameter: 18, season: 'all_season' },
         })
       ),
-      dict
+      dict, 'ru'
     );
     expect(summary).toEqual(['205/55 R18', '5x112', dict.season.all_season]);
     expect(summary).not.toContain('Audi A4 B8');

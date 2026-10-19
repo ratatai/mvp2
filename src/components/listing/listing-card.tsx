@@ -28,7 +28,7 @@ export function ListingCard({
   priority?: boolean;
 }) {
   const image = primaryImageOf(listing.images);
-  const summary = listingCardSummary(listing, dict);
+  const summary = listingCardSummary(listing, dict, locale);
   const published = listing.published_at ?? listing.created_at;
 
   return (
