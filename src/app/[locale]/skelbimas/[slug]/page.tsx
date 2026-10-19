@@ -14,6 +14,12 @@ import { fetchListingBySlug } from '@/lib/repositories/listings';
 import { routes } from '@/lib/routes';
 import { listingSpecGroups } from '@/lib/spec-display';
 
+// A transient failure (config, client or database) must not be reported as a
+// missing listing. The message is fixed and generic; nothing from the
+// repository is echoed. Every other error code stays indistinguishable from
+// an absent listing.
+const LISTING_UNAVAILABLE = 'listing_unavailable';
+
 export async function generateMetadata({
   params,
 }: {
@@ -24,6 +30,7 @@ export async function generateMetadata({
 
   const result = await fetchListingBySlug(slug);
   if (!result.ok) {
+    if (result.error === 'unavailable') throw new Error(LISTING_UNAVAILABLE);
     const dict = getDictionary(locale);
     return { title: dict.listing.notFoundTitle, robots: { index: false } };
   }
@@ -62,7 +69,10 @@ export default async function ListingPage({
   if (!isLocale(locale)) notFound();
 
   const result = await fetchListingBySlug(slug);
-  if (!result.ok) notFound();
+  if (!result.ok) {
+    if (result.error === 'unavailable') throw new Error(LISTING_UNAVAILABLE);
+    notFound();
+  }
 
   const { listing, seller } = result.data;
   const dict = getDictionary(locale);
