@@ -1,0 +1,197 @@
+# Local-only two-user RLS and Storage isolation gate for RATATAI PR #8.
+# Manual trigger only. The reviewed application SHA is fixed below.
+
+name: Local cross-user isolation E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-search-e2e
+  cancel-in-progress: false
+
+env:
+  APP_SHA: 58d1df3c948694123836e879230fd888f153cf4e
+  SUPABASE_CLI_VERSION: '2.120.0'
+  SUPABASE_EXPERIMENTAL_STACK: '0'
+  SUPABASE_NO_KEYRING: '1'
+  SUPABASE_PROJECT_ID: ratatai-marketplace
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  isolation:
+    name: two-user RLS and Storage isolation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require a pinned Supabase CLI version
+        run: |
+          if ! [[ "$SUPABASE_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SUPABASE_CLI_VERSION must be a pinned X.Y.Z release."
+            exit 1
+          fi
+
+      - name: Check out the reviewed application commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.APP_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Confirm the checked-out commit
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APP_SHA" || { echo "::error::Checked out $actual, expected $APP_SHA."; exit 1; }
+
+      - name: Reject production files, linked metadata and remote credentials
+        run: |
+          set -u
+          problems=0
+          for f in .env .env.local .env.production .env.*.local supabase/config.json; do
+            if [ -e "$f" ]; then echo "::error::$f must not exist."; problems=1; fi
+          done
+          for p in supabase/.temp supabase/.branches; do
+            if [ -e "$p" ]; then echo "::error::$p must not exist."; problems=1; fi
+          done
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF SUPABASE_SERVICE_ROLE_KEY NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY E2E_ISO_SUPABASE_URL E2E_ISO_ANON_KEY E2E_ISO_A_EMAIL E2E_ISO_A_PASSWORD E2E_ISO_B_EMAIL E2E_ISO_B_PASSWORD; do
+            if [ -n "${!v:-}" ]; then echo "::error::$v must be unset before local setup."; problems=1; fi
+          done
+          grep -Eq '^major_version = 17$' supabase/config.toml || { echo '::error::Expected Postgres 17.'; problems=1; }
+          exit "$problems"
+
+      - name: Assert a fresh runner
+        id: fresh
+        run: |
+          docker info --format '{{.ServerVersion}}' >/dev/null
+          test -z "$(docker ps -aq --filter 'name=supabase_')" || { echo '::error::Existing Supabase containers found.'; exit 1; }
+          test -z "$(docker volume ls -q --filter 'name=supabase_')" || { echo '::error::Existing Supabase volumes found.'; exit 1; }
+          for port in 54321 54322; do
+            if ss -ltn "( sport = :$port )" | grep -q LISTEN; then echo "::error::Port $port is in use."; exit 1; fi
+          done
+          echo 'allowed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Disable demo seed for the disposable database
+        run: |
+          awk '
+            /^\[/ { section = $0 }
+            section == "[db.seed]" && /^enabled = true$/ { print "enabled = false"; changed = 1; next }
+            { print }
+            END { if (!changed) exit 1 }
+          ' supabase/config.toml > "$RUNNER_TEMP/config.toml"
+          mv "$RUNNER_TEMP/config.toml" supabase/config.toml
+
+      - name: Install the pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Confirm the CLI version
+        run: |
+          installed="$(supabase --version | tr -d '[:space:]')"
+          test "$installed" = "$SUPABASE_CLI_VERSION" || { echo "::error::Installed $installed, expected $SUPABASE_CLI_VERSION."; exit 1; }
+
+      - name: Start a new disposable local stack
+        run: |
+          set +x
+          umask 077
+          start_log="$(mktemp "$RUNNER_TEMP/start.XXXXXX")"
+          trap 'rm -f "$start_log"' EXIT
+          if supabase start -x studio,edge-runtime,logflare,vector >"$start_log" 2>&1; then
+            echo 'Disposable stack started.'
+          else
+            code=$?
+            echo "::error::Local stack start or migrations failed (exit $code); key-bearing output suppressed."
+            exit "$code"
+          fi
+
+      - name: Export only the loopback URL and local anon key
+        run: |
+          set +x
+          umask 077
+          status_file="$(mktemp "$RUNNER_TEMP/status.XXXXXX")"
+          trap 'rm -f "$status_file"' EXIT
+          supabase status -o env >"$status_file" 2>/dev/null || { echo '::error::Local status failed; output suppressed.'; exit 1; }
+          read_value() { grep -E "^$1=" "$status_file" | head -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'; }
+          api_url="$(read_value API_URL)"
+          anon_key="$(read_value ANON_KEY)"
+          test -n "$api_url" && test -n "$anon_key" || { echo '::error::Missing local URL or anon key.'; exit 1; }
+          echo "::add-mask::$anon_key"
+          test "$api_url" = 'http://127.0.0.1:54321' || { echo '::error::Expected fixed loopback API.'; exit 1; }
+          {
+            echo "E2E_ISO_SUPABASE_URL=$api_url"
+            echo "E2E_ISO_ANON_KEY=$anon_key"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify Postgres 17, migrations and empty catalog
+        run: |
+          db="supabase_db_${SUPABASE_PROJECT_ID}"
+          version="$(docker exec "$db" psql -U postgres -d postgres -tAc 'show server_version_num' | tr -d '[:space:]')"
+          [[ "$version" =~ ^17[0-9]{4}$ ]] || { echo "::error::Expected Postgres 17, got $version."; exit 1; }
+          applied="$(docker exec "$db" psql -U postgres -d postgres -tAc 'select count(*) from supabase_migrations.schema_migrations' | tr -d '[:space:]')"
+          expected="$(ls -1 supabase/migrations/*.sql | wc -l | tr -d '[:space:]')"
+          test "$applied" = "$expected" || { echo "::error::Applied migrations $applied/$expected."; exit 1; }
+          test "$(docker exec "$db" psql -U postgres -d postgres -tAc 'select count(*) from public.listings' | tr -d '[:space:]')" = 0
+          echo "Verified PG17, migrations $applied/$expected and an empty catalog."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies and check script syntax
+        run: |
+          npm ci
+          node --check tests/e2e/cross-user-isolation.mjs
+
+      - name: Provision two synthetic local users
+        run: |
+          set +x
+          node --input-type=module <<'NODE'
+          import { randomBytes } from 'node:crypto';
+          import { appendFileSync } from 'node:fs';
+          import { createClient } from '@supabase/supabase-js';
+          const origin = new URL(process.env.E2E_ISO_SUPABASE_URL).origin;
+          if (origin !== 'http://127.0.0.1:54321') throw new Error('Expected fixed loopback API');
+          const localFetch = (input, init) => {
+            const target = new URL(typeof input === 'string' ? input : input.url ?? String(input));
+            if (target.origin !== origin) throw new Error('Nonlocal Auth request refused');
+            return fetch(input, { ...init, redirect: 'error' });
+          };
+          const client = createClient(origin, process.env.E2E_ISO_ANON_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+            global: { fetch: localFetch }
+          });
+          const users = [
+            ['E2E_ISO_A', 'e2e-iso-a@example.test'],
+            ['E2E_ISO_B', 'e2e-iso-b@example.test']
+          ];
+          for (const [prefix, email] of users) {
+            const password = randomBytes(32).toString('hex');
+            console.log('::add-mask::' + password);
+            const { data, error } = await client.auth.signUp({ email, password, options: { data: { display_name: prefix, preferred_language: 'lt' } } });
+            if (error || !data.user?.id || data.user.email !== email) throw new Error(prefix + ' local signup failed; response suppressed');
+            appendFileSync(process.env.GITHUB_ENV, `${prefix}_EMAIL=${email}\n${prefix}_PASSWORD=${password}\n`);
+            await client.auth.signOut({ scope: 'local' });
+          }
+          console.log('Two synthetic local users provisioned; sessions discarded and passwords masked.');
+          NODE
+
+      - name: Run the eight isolation checks once
+        run: node tests/e2e/cross-user-isolation.mjs
+
+      - name: Verify the retained owner fixture
+        run: |
+          db="supabase_db_${SUPABASE_PROJECT_ID}"
+          listing="$(docker exec "$db" psql -U postgres -d postgres -tAc "select count(*) from public.listings l join auth.users u on u.id=l.user_id where u.email='e2e-iso-a@example.test' and l.slug='e2e-iso-draft-tyre' and l.status='draft' and l.title='E2E isolation draft tyre (owner check)'" | tr -d '[:space:]')"
+          image="$(docker exec "$db" psql -U postgres -d postgres -tAc "select count(*) from public.listing_images i join public.listings l on l.id=i.listing_id join auth.users u on u.id=l.user_id where u.email='e2e-iso-a@example.test' and i.storage_path = u.id::text || '/' || l.id::text || '/e2e-iso-owner.png'" | tr -d '[:space:]')"
+          object="$(docker exec "$db" psql -U postgres -d postgres -tAc "select count(*) from storage.objects o join auth.users u on split_part(o.name,'/',1)=u.id::text where u.email='e2e-iso-a@example.test' and o.bucket_id='listing-images' and o.name like '%/e2e-iso-owner.png'" | tr -d '[:space:]')"
+          test "$listing" = 1 && test "$image" = 1 && test "$object" = 1
+          echo 'Verified one owner-A draft, one image row and one Storage object.'
+
+      - name: Stop and discard the local stack
+        if: always() && steps.fresh.outputs.allowed == 'true'
+        run: supabase stop --no-backup >/dev/null 2>&1
