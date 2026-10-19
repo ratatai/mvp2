@@ -107,6 +107,94 @@ describe('parseFilters', () => {
     expect(filters.etMin).toBe(-10);
     expect(filters.etMax).toBe(45);
   });
+
+  it('accepts whole, signed, decimal and boundary numbers with surrounding whitespace', () => {
+    const expected = {
+      sort: 'newest',
+      page: 3,
+      priceMin: 0,
+      priceMax: 1_000_000,
+      width: 405,
+      treadDepthMin: 5.5,
+      rimWidth: 7.5,
+      cb: 66.6,
+      etMin: -60,
+      etMax: 90,
+    };
+
+    const query =
+      'page=%203%20&priceMin=0&priceMax=1000000.00&width=405' +
+      '&treadDepthMin=5.5&rimWidth=%207.5&cb=66.6&etMin=-60&etMax=90';
+
+    expect(parseFilters(new URLSearchParams(query))).toEqual(expected);
+    expect(
+      parseFilters({
+        page: ' 3 ',
+        priceMin: '0',
+        priceMax: '1000000.00',
+        width: ['405', '205'],
+        treadDepthMin: '5.5',
+        rimWidth: ' 7.5',
+        cb: '66.6',
+        etMin: '-60',
+        etMax: '90',
+      })
+    ).toEqual(expected);
+  });
+
+  it('accepts explicitly signed values and still swaps reversed et bounds', () => {
+    const filters = parseFilters({ etMin: '+15', etMax: '-5', cb: '+57.1' });
+
+    expect(filters.etMin).toBe(-5);
+    expect(filters.etMax).toBe(15);
+    expect(filters.cb).toBe(57.1);
+  });
+
+  it('drops values that are only partly numeric instead of reading a prefix', () => {
+    const query =
+      'etMin=12.5&etMax=20px&cb=66.6abc&width=205.5&page=2.0&quantity=4x' +
+      '&priceMin=50eur&priceMax=1e3&rimWidth=7,5&treadDepthMin=0x5' +
+      '&yearMin=Infinity&boltCount=NaN&diameter=%20&aspectRatio=';
+
+    const expected = { sort: 'newest', page: 1 };
+
+    expect(parseFilters(new URLSearchParams(query))).toEqual(expected);
+    expect(
+      parseFilters({
+        etMin: '12.5',
+        etMax: '20px',
+        cb: '66.6abc',
+        width: '205.5',
+        page: '2.0',
+        quantity: '4x',
+        priceMin: '50eur',
+        priceMax: '1e3',
+        rimWidth: '7,5',
+        treadDepthMin: '0x5',
+        yearMin: 'Infinity',
+        boltCount: 'NaN',
+        diameter: '   ',
+        aspectRatio: '',
+      })
+    ).toEqual(expected);
+  });
+
+  it('drops a bare dot, a trailing dot, a double sign and signed infinity', () => {
+    const filters = parseFilters({
+      cb: '.5',
+      rimWidth: '7.',
+      priceMin: '--5',
+      priceMax: '-Infinity',
+    });
+
+    expect(filters).toEqual({ sort: 'newest', page: 1 });
+  });
+
+  it('still drops a well-formed value that is out of range', () => {
+    const filters = parseFilters({ etMin: '-61', etMax: '91', cb: '130.1', priceMax: '-0.5' });
+
+    expect(filters).toEqual({ sort: 'newest', page: 1 });
+  });
 });
 
 describe('filters round trip', () => {
