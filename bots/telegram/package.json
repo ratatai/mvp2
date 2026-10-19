@@ -1,0 +1,21 @@
+{
+  "name": "ratatai-telegram-listing-bot",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Telegram bot that turns tyre photos into a RATATAI listing (LT + RU), asking the seller for anything it cannot read.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
