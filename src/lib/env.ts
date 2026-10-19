@@ -71,6 +71,27 @@ export function getPublicEnv(): PublicEnv {
 
 const FALLBACK_SITE_URL = 'http://localhost:3000';
 
+type SiteUrlProblem = 'missing' | 'malformed';
+
+const warnedSiteUrlProblems = new Set<SiteUrlProblem>();
+
+/**
+ * In production a fallback origin would end up in canonical links, sitemap,
+ * robots and auth redirects, so say so once per problem. The supplied value is
+ * deliberately never included in the message.
+ */
+function warnSiteUrlFallback(problem: SiteUrlProblem): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (warnedSiteUrlProblems.has(problem)) return;
+  warnedSiteUrlProblems.add(problem);
+
+  const reason = problem === 'missing' ? 'is missing or blank' : 'is not a valid absolute URL';
+  console.warn(
+    `[env] NEXT_PUBLIC_SITE_URL ${reason}; falling back to ${FALLBACK_SITE_URL} for metadata, sitemap, robots and auth redirects. ` +
+      'Set NEXT_PUBLIC_SITE_URL to the public origin of the deployment (for example https://example.com, no trailing slash) and rebuild.'
+  );
+}
+
 /**
  * Absolute site origin, safe to call during static generation.
  * A variable that is present but blank counts as missing, otherwise
@@ -78,13 +99,17 @@ const FALLBACK_SITE_URL = 'http://localhost:3000';
  */
 export function getSiteUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? '';
-  if (raw.length === 0) return FALLBACK_SITE_URL;
+  if (raw.length === 0) {
+    warnSiteUrlFallback('missing');
+    return FALLBACK_SITE_URL;
+  }
 
   const withoutTrailingSlash = raw.replace(/\/+$/, '');
 
   try {
     void new URL(withoutTrailingSlash);
   } catch {
+    warnSiteUrlFallback('malformed');
     return FALLBACK_SITE_URL;
   }
 
