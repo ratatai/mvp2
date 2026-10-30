@@ -104,8 +104,8 @@ export default async function ListingPage({
     <div className="shell py-6 sm:py-10">
       <script
         type="application/ld+json"
-        // The payload is built from validated data, never from raw user HTML.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        // User text can contain </script>; escape HTML delimiters inside JSON.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
 
       <Link

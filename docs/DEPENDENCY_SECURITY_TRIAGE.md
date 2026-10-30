@@ -191,3 +191,16 @@ fix or by an explicit, owner-approved acceptance note.
    `npm run test` and `npm run build`, recording real exit codes. Never use
    `npm audit fix --force`. Playwright stays on a local disposable stack as
    `E2E_SAFETY.md` requires.
+
+## Update 2026-10-28 — assembled PR36 candidate
+
+This dated update supersedes the historical finding counts above for the local
+verification candidate described in RELEASE_VERIFICATION_2026-10-28.md.
+A fresh installed-tree audit identified GHSA-mrhx-c7xc-m3w5 in Zod 3.25.76.
+Zod is now pinned to 4.6.7. The lockfile changes only the root Zod requirement
+and the Zod package entry; all other package versions and metadata are retained.
+A fresh `npm ci`, lint, TypeScript, 514 tests and Next 15.5.28 production build
+(54/54 static pages) passed. Full and production-only `npm audit --json` both
+returned exit 0 and zero findings. The two new tests cover an independently
+found JSON-LD HTML injection issue, also repaired in this candidate.
+No DB E2E or deployed-site readiness is inferred from these dependency results.

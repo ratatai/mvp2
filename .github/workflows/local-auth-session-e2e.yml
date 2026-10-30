@@ -1,0 +1,325 @@
+# Local-only browser checks for the authentication session (PR #8).
+#
+# Runs tests/e2e/auth-session.spec.ts against a NEW, disposable Supabase
+# stack started on this runner. It never talks to a hosted project: no
+# secrets, no access token, no `supabase link`, `db push` or other remote
+# command. See E2E_SAFETY.md in the application checkout.
+#
+# Runs on its own, never together with listing-lifecycle.spec.ts: the spec's
+# UI logout revokes every session of the shared synthetic account.
+#
+# Manual trigger only. The application commit is fixed below and cannot be
+# changed from the dispatch form; review and edit APP_SHA in a PR instead.
+# A run uses normal GitHub Actions minutes (not the Claude API).
+
+name: Local auth session E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-search-e2e
+  cancel-in-progress: false
+
+env:
+  # Reviewed application commit with the auth redirect and dependency fixes.
+  APP_SHA: 3da663045792989fffdb618f78c6d469478a7556
+  # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
+  SUPABASE_CLI_VERSION: '2.120.0'
+  # Pin legacy Docker backend: container IDs and status -o env below depend on it.
+  SUPABASE_EXPERIMENTAL_STACK: '0'
+  SUPABASE_NO_KEYRING: '1'
+  SUPABASE_PROJECT_ID: ratatai-marketplace
+  E2E_AUTH_EMAIL: e2e-auth-user@example.test
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  auth-session-e2e:
+    name: auth session (desktop login/logout, RU/EN redirects)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require a verified, pinned Supabase CLI version
+        run: |
+          if ! [[ "$SUPABASE_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SUPABASE_CLI_VERSION is not a pinned X.Y.Z release. Set a verified version before dispatching."
+            exit 1
+          fi
+
+      - name: Check out the reviewed application commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.APP_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Confirm the checked-out commit and the auth spec
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$APP_SHA" ]; then
+            echo "::error::Checked out $actual, expected $APP_SHA."
+            exit 1
+          fi
+          test -f tests/e2e/auth-session.spec.ts
+
+      - name: Reject production env files, linked metadata and remote credentials
+        run: |
+          set -u
+          problems=0
+          for f in .env .env.local .env.production .env.*.local supabase/config.json; do
+            if [ -e "$f" ]; then echo "::error::$f must not exist in this run."; problems=1; fi
+          done
+          for p in supabase/.temp supabase/.branches; do
+            if [ -e "$p" ]; then echo "::error::$p (linked Supabase metadata) must not exist."; problems=1; fi
+          done
+          for v in E2E_EMAIL E2E_PASSWORD SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF SUPABASE_SERVICE_ROLE_KEY NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -n "${!v:-}" ]; then echo "::error::$v must not be set before the local stack starts."; problems=1; fi
+          done
+          if ! grep -Eq '^major_version = 17$' supabase/config.toml; then
+            echo "::error::supabase/config.toml does not set db.major_version = 17."; problems=1
+          fi
+          if ! [[ "$E2E_AUTH_EMAIL" =~ ^e2e-[a-z0-9-]+@example\.test$ ]]; then
+            echo "::error::E2E_AUTH_EMAIL is not a synthetic example.test address."; problems=1
+          fi
+          exit "$problems"
+
+      - name: Assert Docker is available and no Supabase stack exists
+        id: fresh
+        run: |
+          docker info --format '{{.ServerVersion}}' >/dev/null
+          if [ -n "$(docker ps -aq --filter 'name=supabase_')" ]; then
+            echo "::error::Found existing supabase_* containers; expected a fresh runner."
+            exit 1
+          fi
+          if [ -n "$(docker volume ls -q --filter 'name=supabase_')" ]; then
+            echo "::error::Found existing Supabase volumes; expected a fresh runner."
+            exit 1
+          fi
+          for port in 54321 54322 3100; do
+            if ss -ltn "( sport = :$port )" | grep -q LISTEN; then
+              echo "::error::Port $port is already in use."
+              exit 1
+            fi
+          done
+
+          echo 'allowed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Disable the demo seed for this disposable database
+        # Runner-only edit to the checkout; never committed. Migrations stay
+        # enabled and are applied in their checked-in order by `supabase start`.
+        run: |
+          awk '
+            /^\[/ { section = $0 }
+            section == "[db.seed]" && /^enabled = true$/ { print "enabled = false"; changed = 1; next }
+            { print }
+            END { if (!changed) exit 1 }
+          ' supabase/config.toml > "$RUNNER_TEMP/config.toml"
+          mv "$RUNNER_TEMP/config.toml" supabase/config.toml
+          git diff --stat -- supabase/config.toml
+          echo "Migrations, in apply order:"
+          ls -1 supabase/migrations | LC_ALL=C sort
+
+      - name: Install the pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Confirm the CLI version
+        run: |
+          installed="$(supabase --version | tr -d '[:space:]')"
+          if [ "$installed" != "$SUPABASE_CLI_VERSION" ]; then
+            echo "::error::Installed Supabase CLI $installed, expected $SUPABASE_CLI_VERSION."
+            exit 1
+          fi
+
+      - name: Start a new disposable local stack (applies migrations)
+        # Fails the job if any migration fails; nothing is skipped or retried.
+        # start prints local keys; capture all output privately and delete it.
+        # Failure reports its exit status without publishing key-bearing logs.
+        run: |
+          set +x
+          umask 077
+          start_log="$(mktemp "$RUNNER_TEMP/start.XXXXXX")"
+          trap 'rm -f "$start_log"' EXIT
+          if supabase start -x studio,edge-runtime,logflare,vector >"$start_log" 2>&1; then
+            echo "Disposable stack started."
+          else
+            code=$?
+            echo "::error::Local stack start/migrations failed (exit $code); raw output suppressed because it can contain keys."
+            exit "$code"
+          fi
+
+      - name: Export the local API URL and anon key only
+        # `supabase status` output contains other keys (service_role, JWT
+        # secret, DB URL). It is written to a private temp file, never printed
+        # or sourced, and deleted straight after two values are read from it.
+        run: |
+          set +x
+          umask 077
+          status_file="$(mktemp "$RUNNER_TEMP/status.XXXXXX")"
+          trap 'rm -f "$status_file"' EXIT
+          if ! supabase status -o env >"$status_file" 2>/dev/null; then
+            echo "::error::supabase status failed (output suppressed: it contains keys)."
+            exit 1
+          fi
+          read_value() {
+            grep -E "^$1=" "$status_file" | head -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'
+          }
+          api_url="$(read_value API_URL)"
+          anon_key="$(read_value ANON_KEY)"
+          if [ -z "$api_url" ] || [ -z "$anon_key" ]; then
+            echo "::error::Could not read API_URL and ANON_KEY from local status."
+            exit 1
+          fi
+          echo "::add-mask::$anon_key"
+          if ! [[ "$api_url" =~ ^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$ ]]; then
+            echo "::error::Local API URL is not a loopback http URL."
+            exit 1
+          fi
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$api_url"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key"
+          } >>"$GITHUB_ENV"
+          echo "Local API URL: $api_url"
+
+      - name: Assert loopback URL and a real local Postgres 17
+        run: |
+          if ! [[ "$NEXT_PUBLIC_SUPABASE_URL" =~ ^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$ ]]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is not loopback."
+            exit 1
+          fi
+          db_container="supabase_db_${SUPABASE_PROJECT_ID}"
+          version_num="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'show server_version_num' | tr -d '[:space:]')"
+          echo "Local server_version_num: $version_num"
+          if ! [[ "$version_num" =~ ^17[0-9]{4}$ ]]; then
+            echo "::error::Local database is not Postgres 17."
+            exit 1
+          fi
+          applied="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from supabase_migrations.schema_migrations' | tr -d '[:space:]')"
+          expected="$(ls -1 supabase/migrations/*.sql | wc -l | tr -d '[:space:]')"
+          echo "Applied migrations: $applied / $expected"
+          if [ "$applied" != "$expected" ]; then
+            echo "::error::Not every checked-in migration was applied."
+            exit 1
+          fi
+          users="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from auth.users' | tr -d '[:space:]')"
+          listings="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from public.listings' | tr -d '[:space:]')"
+          echo "Users / listings in fresh database: $users / $listings"
+          test "$users" = 0
+          test "$listings" = 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Provision one confirmed synthetic user through local Auth
+        # Password is generated here and masked before it reaches GITHUB_ENV.
+        # The signup session is discarded; nothing is printed from responses.
+        run: |
+          set +x
+          node --input-type=module <<'NODE'
+          import { randomBytes } from 'node:crypto';
+          import { appendFileSync } from 'node:fs';
+          import { createClient } from '@supabase/supabase-js';
+          const origin = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          if (origin !== 'http://127.0.0.1:54321') throw new Error('Expected fixed loopback API');
+          const email = process.env.E2E_AUTH_EMAIL;
+          if (!/^e2e-[a-z0-9-]+@example\.test$/.test(email)) throw new Error('Non-synthetic email refused');
+          const localFetch = (input, init) => {
+            const url = input instanceof Request ? input.url : String(input);
+            if (new URL(url).origin !== origin) throw new Error('Nonlocal request refused');
+            return fetch(input, { ...init, redirect: 'error' });
+          };
+          const client = createClient(origin, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+            global: { fetch: localFetch }
+          });
+          const password = randomBytes(32).toString('hex');
+          console.log('::add-mask::' + password);
+          const { data, error } = await client.auth.signUp({
+            email,
+            password,
+            options: { data: { display_name: 'E2E auth user', preferred_language: 'lt' } }
+          });
+          if (error || !data.user?.id || data.user.email !== email) {
+            throw new Error('Synthetic local signup failed; response suppressed');
+          }
+          appendFileSync(process.env.GITHUB_ENV, 'E2E_EMAIL=' + email + '\nE2E_PASSWORD=' + password + '\n');
+          console.log('Synthetic local user ready; session discarded, password masked.');
+          NODE
+
+      - name: Assert exactly one confirmed synthetic user with a profile
+        run: |
+          db_container="supabase_db_${SUPABASE_PROJECT_ID}"
+          users="$(docker exec "$db_container" psql -U postgres -d postgres -tAc 'select count(*) from auth.users' | tr -d '[:space:]')"
+          ready="$(docker exec "$db_container" psql -U postgres -d postgres -tAc "select count(*) from auth.users u join public.profiles p on p.id = u.id where u.email = '${E2E_AUTH_EMAIL}' and u.email_confirmed_at is not null" | tr -d '[:space:]')"
+          test "$users" = 1
+          test "$ready" = 1
+          echo 'Verified one confirmed synthetic user with a profile row.'
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the auth session spec once on desktop
+        # Desktop only: the login/logout test skips itself elsewhere, and logout
+        # revokes the account's sessions, so no retries and no parallel specs.
+        # No artifacts or traces: they could contain synthetic session material.
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/auth-session-results.json
+        run: >-
+          npx playwright test tests/e2e/auth-session.spec.ts
+          --project=desktop --workers=1 --retries=0 --trace=off
+          --reporter=list,json
+
+      - name: Fail unless all three expected tests ran and passed
+        env:
+          RESULTS: ${{ runner.temp }}/auth-session-results.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync(process.env.RESULTS, 'utf8'));
+          const results = [];
+          const walk = (suite) => {
+            for (const spec of suite.specs ?? []) {
+              for (const t of spec.tests ?? []) {
+                results.push({ title: spec.title, project: t.projectName, status: t.status });
+              }
+            }
+            for (const child of suite.suites ?? []) walk(child);
+          };
+          for (const suite of report.suites ?? []) walk(suite);
+          const required = [
+            'ru: new-listing page redirects to the ru login',
+            'en: new-listing page redirects to the en login',
+            'protected page access follows the session',
+          ];
+          for (const r of results) console.log(`${r.project} | ${r.title} | ${r.status}`);
+          const { expected, skipped, unexpected, flaky } = report.stats;
+          console.log(`expected=${expected} skipped=${skipped} unexpected=${unexpected} flaky=${flaky}`);
+          const problems = [];
+          if (expected !== 3 || skipped !== 0 || unexpected !== 0 || flaky !== 0) problems.push('stats');
+          if (results.length !== 3) problems.push('test count');
+          for (const title of required) {
+            const hit = results.filter((r) => r.title === title && r.project === 'desktop' && r.status === 'expected');
+            if (hit.length !== 1) problems.push(title);
+          }
+          if (problems.length > 0) {
+            console.log('::error::Auth gate incomplete: ' + problems.join('; '));
+            process.exit(1);
+          }
+          console.log('All three auth tests ran on desktop and passed; none skipped.');
+          NODE
+
+      - name: Stop and discard the local stack
+        # Never stop anything if the fresh-runner guard rejected this host.
+        if: always() && steps.fresh.outputs.allowed == 'true'
+        run: |
+          supabase stop --no-backup >/dev/null 2>&1
