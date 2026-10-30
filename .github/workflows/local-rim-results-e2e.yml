@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: local-search-e2e
+  group: local-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
