@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Reviewed head of PR #8 (feature/category-first-search).
-  APP_SHA: e402e8e973ca2c21129cc59a6f8f808596238b66
+  APP_SHA: 8e4bbc129a959fa552a5af104a679a3928f35bb5
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
@@ -37,7 +37,7 @@ jobs:
   search-e2e:
     name: populated tyre results (desktop, mobile, narrow)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Require a verified, pinned Supabase CLI version
         run: |
@@ -204,7 +204,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -259,10 +259,26 @@ jobs:
         # server on 127.0.0.1:3100. The mutating lifecycle spec is not run and
         # E2E_EMAIL/E2E_PASSWORD are not set.
         env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/gate-results.json
           E2E_TYRE_FIXTURE: loaded
         run: >-
           npx playwright test tests/e2e/tyre-results.spec.ts
-          --project=desktop --project=mobile --project=narrow --trace=off
+          --project=desktop --project=mobile --project=narrow --trace=off --retries=0 --workers=1 --reporter=list,json
+
+      - name: Require the complete selected browser gate
+        run: node scripts/assert-playwright-complete.mjs "${{ runner.temp }}/gate-results.json" 21
+
+      - name: Run public forms, access, catalog, locale and responsive checks on populated local data
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/public-results.json
+        run: >-
+          npx playwright test tests/e2e/auth.spec.ts tests/e2e/access-control.spec.ts
+          tests/e2e/catalog.spec.ts tests/e2e/i18n.spec.ts tests/e2e/responsive.spec.ts
+          --project=desktop --project=mobile --project=narrow --workers=1
+          --retries=0 --trace=off --reporter=list,json
+
+      - name: Require all 120 public checks without skips or retries
+        run: node scripts/assert-playwright-complete.mjs "${{ runner.temp }}/public-results.json" 120
 
       - name: Upload Playwright report on failure
         if: failure()

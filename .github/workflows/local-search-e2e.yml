@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Reviewed head of PR #8 (feature/category-first-search).
-  APP_SHA: e78725b1bdc7b55b454cc845f9453a44aa50602b
+  APP_SHA: 8e4bbc129a959fa552a5af104a679a3928f35bb5
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
@@ -204,7 +204,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -217,9 +217,14 @@ jobs:
         # playwright.config.ts re-checks the loopback guard and builds its own
         # server on 127.0.0.1:3100. The mutating lifecycle spec is not run and
         # E2E_EMAIL/E2E_PASSWORD are not set.
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/gate-results.json
         run: >-
           npx playwright test tests/e2e/search-filters.spec.ts
-          --project=desktop --project=mobile --project=narrow --trace=off
+          --project=desktop --project=mobile --project=narrow --trace=off --retries=0 --workers=1 --reporter=list,json
+
+      - name: Require the complete selected browser gate
+        run: node scripts/assert-playwright-complete.mjs "${{ runner.temp }}/gate-results.json" 69
 
       - name: Upload Playwright report on failure
         if: failure()

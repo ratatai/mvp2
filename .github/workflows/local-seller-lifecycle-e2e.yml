@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Reviewed head of PR #8 (feature/category-first-search).
-  APP_SHA: 6d0123b8be4ac1ff27941880d25557f1746e1322
+  APP_SHA: 8e4bbc129a959fa552a5af104a679a3928f35bb5
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
@@ -204,7 +204,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -255,9 +255,14 @@ jobs:
       - name: Run seller lifecycle once on desktop
         # No retry on this mutating flow; fresh runner has one synthetic account.
         # No artifacts: reports/traces may contain synthetic session material.
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/gate-results.json
         run: >-
           npx playwright test tests/e2e/listing-lifecycle.spec.ts
-          --project=desktop --workers=1 --retries=0 --trace=off
+          --project=desktop --trace=off --retries=0 --workers=1 --reporter=list,json
+
+      - name: Require the complete selected browser gate
+        run: node scripts/assert-playwright-complete.mjs "${{ runner.temp }}/gate-results.json" 1
 
       - name: Verify persisted archived rows and uploaded images
         run: |
