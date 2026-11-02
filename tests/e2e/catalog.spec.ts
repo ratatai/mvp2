@@ -99,6 +99,11 @@ test.describe('public catalog', () => {
     await page.goto(routes.tires('lt'));
 
     const form = await openFilterForm(page);
+    const more = form.getByRole('button', { name: 'Daugiau filtrų', exact: true });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await expect(form.getByLabel(LT.filterPriceFrom)).toBeVisible();
     await form.getByLabel(LT.filterPriceFrom).fill('25');
     await form.getByRole('button', { name: LT.apply }).click();
 

@@ -23,7 +23,9 @@ const SLUG_TO_CATEGORY: Readonly<Record<string, ListingCategory>> = {
 };
 
 export function categoryFromSlug(slug: string): ListingCategory | null {
-  return SLUG_TO_CATEGORY[slug] ?? null;
+  return Object.prototype.hasOwnProperty.call(SLUG_TO_CATEGORY, slug)
+    ? SLUG_TO_CATEGORY[slug] ?? null
+    : null;
 }
 
 const join = (locale: Locale, path: string): string =>

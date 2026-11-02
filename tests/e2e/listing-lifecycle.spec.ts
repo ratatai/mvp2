@@ -27,6 +27,10 @@ import { Buffer } from 'node:buffer';
 import { expect, test, type Page } from '@playwright/test';
 
 import { routes } from './helpers';
+import {
+  isSyntheticE2eEmail,
+  NON_SYNTHETIC_EMAIL_MESSAGE,
+} from './synthetic-account';
 
 /* -------------------------------------------------------------------------- */
 /* Credentials                                                                 */
@@ -96,6 +100,8 @@ const UI = {
   markSold: 'Pažymėti parduota',
   statusSold: 'Parduota',
   statusActive: 'Paskelbta',
+  statusArchived: 'Archyvuota',
+  reactivate: 'Paskelbti iš naujo',
   archive: 'Archyvuoti',
 } as const;
 
@@ -201,6 +207,9 @@ test.describe('seller lifecycle', () => {
     const wheelTitle = `Testlandia ratai ${RUN_ID}`;
 
     await test.step('sign in as the test seller', async () => {
+      // Refuse a real-looking account before anything is typed or written.
+      // The assertion reports a boolean only, never the address.
+      expect(isSyntheticE2eEmail(email), NON_SYNTHETIC_EMAIL_MESSAGE).toBe(true);
       await signIn(page);
     });
 
@@ -398,14 +407,37 @@ test.describe('seller lifecycle', () => {
 
     await test.step('archive what this run created', async () => {
       // Archiving rather than deleting: a failed run leaves the rows behind
-      // for inspection instead of destroying them.
+      // for inspection instead of destroying them. Archived cards stay in
+      // "Mano skelbimai" with an "Archyvuota" chip and no archive button.
+      const cardFor = (title: string) =>
+        page.getByRole('listitem').filter({ hasText: title }).first();
+
       for (const title of [tireTitle, rimTitle, wheelTitle]) {
         await page.goto(routes.myListings('lt'));
 
-        const card = page.getByRole('listitem').filter({ hasText: title }).first();
-        const archive = card.getByRole('button', { name: UI.archive });
+        // Every listing this run created (active or sold) must offer archive.
+        const archive = cardFor(title).getByRole('button', {
+          name: UI.archive,
+          exact: true,
+        });
+        await expect(archive).toBeVisible();
+        await archive.click();
 
-        if (await archive.isVisible()) await archive.click();
+        // The action refreshes the page once the status is saved.
+        await expect(cardFor(title)).toContainText(UI.statusArchived);
+      }
+
+      // After a full reload the archived state must come back from the server.
+      await page.reload();
+      for (const title of [tireTitle, rimTitle, wheelTitle]) {
+        const card = cardFor(title);
+        await expect(card).toContainText(UI.statusArchived);
+        await expect(
+          card.getByRole('button', { name: UI.archive, exact: true })
+        ).toHaveCount(0);
+        await expect(
+          card.getByRole('button', { name: UI.reactivate, exact: true })
+        ).toBeVisible();
       }
     });
   });

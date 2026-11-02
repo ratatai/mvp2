@@ -26,7 +26,7 @@ concurrency:
 
 env:
   # Reviewed application commit with the auth redirect and dependency fixes.
-  APP_SHA: 3da663045792989fffdb618f78c6d469478a7556
+  APP_SHA: 8e4bbc129a959fa552a5af104a679a3928f35bb5
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
@@ -316,6 +316,49 @@ jobs:
             process.exit(1);
           }
           console.log('All three auth tests ran on desktop and passed; none skipped.');
+          NODE
+
+      - name: Run the four mobile navigation tests
+        # The spec sets its own 375px viewport, then resizes to 1024px.
+        # Run one project to avoid repeating the identical viewport checks.
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/mobile-nav-results.json
+        run: >-
+          npx playwright test tests/e2e/mobile-nav.spec.ts
+          --project=desktop --workers=1 --retries=0 --trace=off
+          --reporter=list,json
+
+      - name: Require all four tests with no skips or retries
+        env:
+          RESULTS: ${{ runner.temp }}/mobile-nav-results.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync(process.env.RESULTS, 'utf8'));
+          const tests = [];
+          function walk(suite) {
+            for (const spec of suite.specs ?? []) {
+              for (const test of spec.tests ?? []) {
+                tests.push({ title: spec.title, project: test.projectName, status: test.status });
+              }
+            }
+            for (const child of suite.suites ?? []) walk(child);
+          }
+          for (const suite of report.suites ?? []) walk(suite);
+          const required = [
+            'Tab and Shift+Tab wrap inside the open drawer',
+            'Escape closes the drawer and returns focus to the trigger',
+            'the close button closes the drawer and returns focus',
+            'widening to 1024px closes the drawer and restores scrolling',
+          ];
+          console.log(JSON.stringify({ tests, stats: report.stats }, null, 2));
+          const stats = report.stats;
+          if (tests.length !== 4 || stats.expected !== 4 || stats.skipped !== 0 ||
+              stats.unexpected !== 0 || stats.flaky !== 0 ||
+              required.some(title => tests.filter(t => t.title === title &&
+                t.project === 'desktop' && t.status === 'expected').length !== 1)) {
+            throw new Error('Mobile navigation gate incomplete');
+          }
           NODE
 
       - name: Stop and discard the local stack

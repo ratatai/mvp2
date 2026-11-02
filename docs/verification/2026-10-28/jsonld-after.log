@@ -1,0 +1,18 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 test
+> vitest run tests/unit/listing-jsonld-security.test.ts
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 /workspace/scratch/85c0bf4e856b/mvp2
+
+ ✓ tests/unit/listing-jsonld-security.test.ts (2 tests) 36ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  15:06:04
+   Duration  522ms (import 55%, transform 29%, tests 14%, worker 2%)
+

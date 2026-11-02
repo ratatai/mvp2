@@ -411,6 +411,58 @@ describe('fetchPublicListings free-text search', () => {
     expect(filterTriples(query)).toHaveLength(0);
   });
 
+  it('forwards nested rim/tire brand and model clauses on the all tab', async () => {
+    const fake = install({ responses: { listings: [{ data: [], count: 0 }] } });
+
+    await fetchPublicListings(filters({ q: 'BBS' }));
+
+    const query = fake.onlyQueryFor('listings');
+    expect(callsOf(query, 'or')).toHaveLength(1);
+    const expression = String(firstArgOf(query, 'or'));
+
+    expect(expression).toContain('specs->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->rim->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->rim->>model.ilike."%BBS%"');
+    expect(expression).toContain('specs->tire->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->tire->>model.ilike."%BBS%"');
+    expect(filterTriples(query)).toHaveLength(0);
+  });
+
+  it('forwards nested clauses on the wheels tab next to structured filters', async () => {
+    const fake = install({ responses: { listings: [{ data: [], count: 0 }] } });
+
+    await fetchPublicListings(
+      filters({ category: 'komplektiniai_ratai', q: 'BBS', pcd: '5x112', etMin: 20 })
+    );
+
+    const query = fake.onlyQueryFor('listings');
+    expect(callsOf(query, 'or')).toHaveLength(1);
+    const expression = String(firstArgOf(query, 'or'));
+
+    expect(expression).toContain('specs->rim->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->tire->>brand.ilike."%BBS%"');
+
+    // Structured filters are unchanged and still target the nested halves.
+    const triples = filterTriples(query);
+    expect(triples).toContainEqual(['specs->rim->pcd', 'eq', '"5x112"']);
+    expect(triples).toContainEqual(['specs->rim->et', 'gte', 20]);
+  });
+
+  it('keeps hostile punctuation quoted inside every nested clause', async () => {
+    const fake = install({ responses: { listings: [{ data: [], count: 0 }] } });
+
+    await fetchPublicListings(
+      filters({ category: 'komplektiniai_ratai', q: 'a"b\\c,d(e)%_' })
+    );
+
+    const expression = String(firstArgOf(fake.onlyQueryFor('listings'), 'or'));
+    const quoted = '"%a\\"b\\\\\\\\c,d(e)\\\\%\\\\_%"';
+
+    expect(expression).toContain(`specs->rim->>brand.ilike.${quoted}`);
+    expect(expression).toContain(`specs->tire->>model.ilike.${quoted}`);
+    expect(expression.split('.ilike.')).toHaveLength(9);
+  });
+
   it('falls back to text search for a size typed without a category', async () => {
     const fake = install({ responses: { listings: [{ data: [], count: 0 }] } });
 

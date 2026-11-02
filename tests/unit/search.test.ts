@@ -7,6 +7,7 @@ import {
   parseRimDiameterQuery,
   parseTireSizeQuery,
   quoteForPostgrest,
+  TEXT_SEARCH_SPEC_PATHS,
 } from '@/lib/search';
 
 describe('escapeLikePattern', () => {
@@ -47,10 +48,18 @@ describe('normalizeQuery', () => {
 describe('buildTextSearchExpression', () => {
   const nasty = 'a"b\\c,d(e)%_ \'f';
 
+  // Every clause must reuse the exact same quoted pattern (back-reference \1).
+  const shape = new RegExp(
+    '^title\\.ilike\\.(".*"),city\\.ilike\\.\\1,' +
+      'specs->>brand\\.ilike\\.\\1,specs->>model\\.ilike\\.\\1,' +
+      'specs->rim->>brand\\.ilike\\.\\1,specs->rim->>model\\.ilike\\.\\1,' +
+      'specs->tire->>brand\\.ilike\\.\\1,specs->tire->>model\\.ilike\\.\\1$'
+  );
+
   it('builds one ilike clause per searchable column', () => {
     const expression = buildTextSearchExpression('michelin');
 
-    expect(expression.split('.ilike.')).toHaveLength(5);
+    expect(expression.split('.ilike.')).toHaveLength(9);
     expect(expression.startsWith('title.ilike."')).toBe(true);
     expect(expression.includes('city.ilike."')).toBe(true);
     expect(expression.includes('specs->>brand.ilike."')).toBe(true);
@@ -58,19 +67,31 @@ describe('buildTextSearchExpression', () => {
     expect(expression.endsWith('"')).toBe(true);
   });
 
+  it('also searches brand and model nested in complete-wheel rim and tire halves', () => {
+    const expression = buildTextSearchExpression('BBS');
+
+    expect(TEXT_SEARCH_SPEC_PATHS).toEqual([
+      'specs->>brand',
+      'specs->>model',
+      'specs->rim->>brand',
+      'specs->rim->>model',
+      'specs->tire->>brand',
+      'specs->tire->>model',
+    ]);
+    expect(expression).toContain('specs->rim->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->rim->>model.ilike."%BBS%"');
+    expect(expression).toContain('specs->tire->>brand.ilike."%BBS%"');
+    expect(expression).toContain('specs->tire->>model.ilike."%BBS%"');
+  });
+
   it('keeps the structure intact for input full of PostgREST metacharacters', () => {
     const expression = buildTextSearchExpression(nasty);
-
-    const shape =
-      /^title\.ilike\.(".*"),city\.ilike\.\1,specs->>brand\.ilike\.\1,specs->>model\.ilike\.\1$/;
 
     expect(shape.test(expression)).toBe(true);
   });
 
   it('quotes and escapes every dangerous character of the pattern', () => {
     const expression = buildTextSearchExpression(nasty);
-    const shape =
-      /^title\.ilike\.(".*"),city\.ilike\.\1,specs->>brand\.ilike\.\1,specs->>model\.ilike\.\1$/;
     const match = shape.exec(expression);
 
     expect(match).not.toBeNull();
@@ -101,7 +122,8 @@ describe('buildTextSearchExpression', () => {
     expect(() => buildTextSearchExpression("O'Brien, (used)")).not.toThrow();
 
     const expression = buildTextSearchExpression("O'Brien, (used)");
-    expect(expression.split('.ilike.')).toHaveLength(5);
+    expect(expression.split('.ilike.')).toHaveLength(9);
+    expect(shape.test(expression)).toBe(true);
     expect(expression.includes("O'Brien, (used)")).toBe(true);
   });
 });

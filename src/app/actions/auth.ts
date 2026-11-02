@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation';
 
 import type { AuthErrorCode, AuthFormState } from '@/app/actions/auth-state';
 import { isLocale, type Locale } from '@/i18n/config';
+import { safeAuthNext } from '@/lib/auth-redirect';
 import { getSiteUrl } from '@/lib/env';
 import { ensureProfile } from '@/lib/repositories/profiles';
 import { routes } from '@/lib/routes';
@@ -40,13 +41,6 @@ function toAuthCode(status: number | undefined, message: string): AuthErrorCode 
     return 'invalid_credentials';
   }
   return 'generic';
-}
-
-/** A safe internal redirect target: same-origin paths only. */
-function safeNext(raw: FormDataEntryValue | null, fallback: string): string {
-  if (typeof raw !== 'string') return fallback;
-  if (!raw.startsWith('/') || raw.startsWith('//')) return fallback;
-  return raw;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -81,7 +75,7 @@ export async function signInAction(
     await ensureProfile(data.user.id);
   }
 
-  redirect(safeNext(formData.get('next'), routes.dashboard(locale)));
+  redirect(safeAuthNext(formData.get('next'), routes.dashboard(locale)));
 }
 
 export async function signUpAction(
