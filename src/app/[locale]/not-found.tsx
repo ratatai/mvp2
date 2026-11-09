@@ -9,7 +9,7 @@ import { LOCALES, type Locale } from '@/i18n/config';
  * A not-found boundary receives no params, so the language is taken from the
  * URL by NotFoundContent; this component only prepares the strings.
  */
-export default function LocaleNotFound() {
+export default function LocaleNotFound({ locale }: { locale?: Locale } = {}) {
   const copy = Object.fromEntries(
     LOCALES.map((locale) => {
       const dict = getDictionary(locale);
@@ -25,5 +25,5 @@ export default function LocaleNotFound() {
     })
   ) as Record<Locale, NotFoundCopy>;
 
-  return <NotFoundContent copy={copy} />;
+  return <NotFoundContent copy={copy} locale={locale} />;
 }

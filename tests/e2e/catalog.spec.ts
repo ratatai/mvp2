@@ -161,6 +161,10 @@ test.describe('public catalog', () => {
       const response = await page.goto(`/${locale}/this-route-does-not-exist-000`);
 
       expect(response?.status()).toBe(404);
+      const html = (await response?.text())?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      expect(html).toMatch(/<meta name="robots" content="noindex"/);
+      expect(html).toContain(`<html lang="${locale}"`);
+      expect(html).toContain(`>${title}</h1>`);
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
       // The site layout, not Next's bare built-in page.
       await expect(page.locator('html')).toHaveAttribute('lang', locale);

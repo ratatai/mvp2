@@ -16,6 +16,7 @@ const remotePatterns = storagePattern === null ? [] : [{ ...storagePattern }];
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: { globalNotFound: true },
   images: {
     remotePatterns,
     formats: ['image/webp'],

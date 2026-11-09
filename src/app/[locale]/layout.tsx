@@ -1,25 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Sora } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { Footer } from '@/components/layout/footer';
-import { Header } from '@/components/layout/header';
+import { SiteDocument } from '@/components/layout/site-document';
 import { LOCALES, isLocale } from '@/i18n/config';
 import { getDictionary } from '@/i18n';
 import { getSiteUrl } from '@/lib/env';
-
-const inter = Inter({
-  subsets: ['latin', 'latin-ext', 'cyrillic'],
-  variable: '--font-body',
-  display: 'swap',
-});
-
-const sora = Sora({
-  subsets: ['latin', 'latin-ext'],
-  variable: '--font-display',
-  display: 'swap',
-});
 
 export function generateStaticParams() {
   return LOCALES.map((locale) => ({ locale }));
@@ -80,20 +66,5 @@ export default async function LocaleLayout({
 
   if (!isLocale(locale)) notFound();
 
-  const dict = getDictionary(locale);
-
-  return (
-    <html lang={locale} className={`${inter.variable} ${sora.variable}`}>
-      <body className="flex min-h-screen flex-col font-sans">
-        <a href="#main" className="skip-link">
-          {dict.common.skipToContent}
-        </a>
-        <Header locale={locale} />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <Footer locale={locale} />
-      </body>
-    </html>
-  );
+  return <SiteDocument locale={locale}>{children}</SiteDocument>;
 }

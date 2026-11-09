@@ -11,6 +11,7 @@ export const LOCALES = ['lt', 'ru', 'en'] as const;
 export type Locale = (typeof LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'lt';
+export const REQUEST_LOCALE_HEADER = 'x-ratatai-locale';
 
 /** Cookie that remembers the visitor's choice across sessions. */
 export const LOCALE_COOKIE = 'ratatai_locale';
