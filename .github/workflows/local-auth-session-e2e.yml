@@ -26,7 +26,7 @@ concurrency:
 
 env:
   # Reviewed application commit with the auth redirect and dependency fixes.
-  APP_SHA: 8e4bbc129a959fa552a5af104a679a3928f35bb5
+  APP_SHA: 0adee6887b2032418878d8fc1674d9035cff7464
   # Official v2.120.0 (2026-10-06); source accepts PG17 and this config.
   SUPABASE_CLI_VERSION: '2.120.0'
   # Pin legacy Docker backend: container IDs and status -o env below depend on it.
