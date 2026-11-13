@@ -1,0 +1,70 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 verify
+> npm run lint && npm run typecheck && npm run test && npm run build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 lint
+> next lint
+
+`next lint` is deprecated and will be removed in Next.js 16.
+For new projects, use create-next-app to choose your preferred linter.
+For existing projects, migrate to the ESLint CLI:
+npx @next/codemod@canary next-lint-to-eslint-cli .
+
+✔ No ESLint warnings or errors
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 typecheck
+> tsc --noEmit
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 test
+> vitest run
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 /workspace/scratch/85c0bf4e856b/mvp2
+
+ ✓ tests/unit/filters.test.ts (26 tests) 21ms
+ ✓ tests/unit/listing.mapper.test.ts (25 tests) 33ms
+ ✓ tests/unit/form-model.test.ts (21 tests) 38ms
+ ✓ tests/unit/listing.validation.test.ts (71 tests) 63ms
+ ✓ tests/integration/images.test.ts (20 tests) 36ms
+ ✓ tests/integration/listings.test.ts (59 tests) 69ms
+ ✓ tests/unit/spec-display.test.ts (45 tests) 67ms
+ ✓ tests/unit/search.test.ts (17 tests) 15ms
+ ✓ tests/unit/canonical.test.ts (18 tests) 13ms
+ ✓ tests/unit/filter-layout.test.ts (17 tests) 10ms
+ ✓ tests/unit/slug.test.ts (16 tests) 17ms
+ ✓ tests/unit/site-url.test.ts (13 tests) 32ms
+ ✓ tests/unit/global-error-boundary.test.ts (18 tests) 43ms
+ ✓ tests/unit/format.test.ts (13 tests) 37ms
+ ✓ tests/unit/listing-page-routing.test.ts (30 tests) 26ms
+ ✓ tests/unit/storage-image-pattern.test.ts (5 tests) 9ms
+ ✓ tests/unit/locale-error-boundary.test.ts (12 tests) 24ms
+ ✓ tests/unit/auth-redirect.test.ts (29 tests) 11ms
+ ✓ tests/unit/e2e-guard.test.ts (22 tests) 10ms
+ ✓ tests/unit/synthetic-account.test.ts (19 tests) 8ms
+ ✓ tests/unit/supabase-server-client.test.ts (1 test) 4ms
+ ✓ tests/unit/locale-from-pathname.test.ts (3 tests) 3ms
+ ✓ tests/unit/listing-jsonld-security.test.ts (2 tests) 38ms
+ ✓ tests/unit/category-routes.test.ts (12 tests) 5ms
+
+ Test Files  24 passed (24)
+      Tests  514 passed (514)
+   Start at  15:06:44
+   Duration  1.44s (transform 51%, import 32%, tests 14%, worker 3%)
+
+    Isolate  24 workers spawned · ~189ms startup each (spawn + environment, per file)
+             at least ~459ms faster with isolate: false — reuses workers across files instead of one per file
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 build
+> next build
+

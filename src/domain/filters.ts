@@ -97,10 +97,27 @@ function readParam(params: RawSearchParams, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** Signed base-10 whole number, e.g. `45`, `-10`, `+5`. */
+const INTEGER_PATTERN = /^[+-]?\d+$/;
+
+/** Signed dot decimal, e.g. `66.6`, `-12.5`, `150`. No exponent, comma or bare dot. */
+const DECIMAL_PATTERN = /^[+-]?\d+(?:\.\d+)?$/;
+
+/**
+ * Parses the whole (trimmed) string or nothing: `12.5`, `66.6abc`, `0x10` and
+ * `1e3` are rejected instead of being read up to the first bad character.
+ */
+function parseStrict(value: string, pattern: RegExp): number | undefined {
+  const trimmed = value.trim();
+  if (!pattern.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function toInt(value: string | undefined, min: number, max: number): number | undefined {
   if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const parsed = parseStrict(value, INTEGER_PATTERN);
+  if (parsed === undefined) return undefined;
   if (parsed < min || parsed > max) return undefined;
   return parsed;
 }
@@ -111,8 +128,8 @@ function toDecimal(
   max: number
 ): number | undefined {
   if (value === undefined) return undefined;
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed)) return undefined;
+  const parsed = parseStrict(value, DECIMAL_PATTERN);
+  if (parsed === undefined) return undefined;
   if (parsed < min || parsed > max) return undefined;
   return parsed;
 }

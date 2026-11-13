@@ -1,0 +1,7 @@
+lt status 500
+PASS real production layout failure lt
+ru status 500
+PASS real production layout failure ru
+en status 500
+PASS real production layout failure en
+3/3 layout fault checks passed

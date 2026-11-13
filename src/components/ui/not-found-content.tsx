@@ -23,10 +23,13 @@ export interface NotFoundCopy {
  */
 export function NotFoundContent({
   copy,
+  locale: documentLocale,
 }: {
   copy: Readonly<Record<Locale, NotFoundCopy>>;
+  locale?: Locale;
 }) {
-  const locale = localeFromPathname(usePathname());
+  const pathname = usePathname();
+  const locale = documentLocale ?? localeFromPathname(pathname);
   const text = copy[locale];
 
   return (

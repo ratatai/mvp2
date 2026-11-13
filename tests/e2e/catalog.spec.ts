@@ -99,6 +99,11 @@ test.describe('public catalog', () => {
     await page.goto(routes.tires('lt'));
 
     const form = await openFilterForm(page);
+    const more = form.getByRole('button', { name: 'Daugiau filtrų', exact: true });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await expect(form.getByLabel(LT.filterPriceFrom)).toBeVisible();
     await form.getByLabel(LT.filterPriceFrom).fill('25');
     await form.getByRole('button', { name: LT.apply }).click();
 
@@ -156,6 +161,10 @@ test.describe('public catalog', () => {
       const response = await page.goto(`/${locale}/this-route-does-not-exist-000`);
 
       expect(response?.status()).toBe(404);
+      const html = (await response?.text())?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      expect(html).toMatch(/<meta name="robots" content="noindex"/);
+      expect(html).toContain(`<html lang="${locale}"`);
+      expect(html).toContain(`>${title}</h1>`);
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
       // The site layout, not Next's bare built-in page.
       await expect(page.locator('html')).toHaveAttribute('lang', locale);

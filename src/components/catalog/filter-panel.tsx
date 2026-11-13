@@ -1,14 +1,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
+import {
+  filterLayout,
+  hasActiveSecondary,
+  nextMoreOpen,
+  type FilterFieldKey,
+  type FilterGroupId,
+} from '@/components/catalog/filter-layout';
 import { CloseIcon, FilterIcon } from '@/components/ui/icons';
 import {
   LISTING_CONDITIONS,
   RIM_MATERIALS,
   TIRE_SEASONS,
-  type ListingCategory,
 } from '@/domain/canonical';
 import {
   clearFilters,
@@ -54,20 +60,16 @@ function fromDraft(draft: Draft, base: CatalogFilters): CatalogFilters {
   return parseFilters(params);
 }
 
-const TIRE_FIELDS = ['width', 'aspectRatio', 'diameter', 'season', 'brand', 'treadDepthMin', 'yearMin'] as const;
-const RIM_FIELDS = ['diameter', 'rimWidth', 'boltCount', 'pcd', 'cb', 'etMin', 'etMax', 'material', 'brand'] as const;
-const WHEEL_FIELDS = ['width', 'aspectRatio', 'diameter', 'season', 'rimWidth', 'pcd', 'cb', 'etMin', 'etMax'] as const;
-
-function fieldsFor(category: ListingCategory | undefined): readonly string[] {
-  switch (category) {
-    case 'padangos':
-      return TIRE_FIELDS;
-    case 'ratlankiai':
-      return RIM_FIELDS;
-    case 'komplektiniai_ratai':
-      return WHEEL_FIELDS;
-    default:
-      return [];
+function groupLegend(id: FilterGroupId, dict: Dictionary): string {
+  switch (id) {
+    case 'tire':
+      return dict.filters.tireSection;
+    case 'rim':
+      return dict.filters.rimSection;
+    case 'wheelTire':
+      return dict.filters.wheelTireSection;
+    case 'wheelRim':
+      return dict.filters.wheelRimSection;
   }
 }
 
@@ -85,11 +87,15 @@ export function FilterPanel({
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(() => toDraft(filters));
   const [open, setOpen] = useState(false);
+  const layout = filterLayout(filters.category);
+  const [moreOpen, setMoreOpen] = useState(() => hasActiveSecondary(layout, filters));
   const formId = useId();
 
-  // Keep the form in sync when the visitor navigates with Back/Forward.
+  // Keep the form in sync when the visitor navigates with Back/Forward, and
+  // reveal the collapsed section if the incoming URL sets a filter inside it.
   useEffect(() => {
     setDraft(toDraft(filters));
+    setMoreOpen((current) => nextMoreOpen(current, filters));
   }, [filters]);
 
   useEffect(() => {
@@ -128,18 +134,20 @@ export function FilterPanel({
     pushFilters(next);
   }
 
-  const visible = new Set(fieldsFor(filters.category));
+  const hint = (text: string) => (
+    <span className="mt-1 block text-xs text-ink-muted">{text}</span>
+  );
 
   const numberField = (
     key: string,
     label: string,
-    extra?: { min?: number; max?: number; step?: number }
+    extra?: { min?: number; max?: number; step?: number; hint?: string }
   ) => (
-    <label key={key} className="block">
+    <label key={key} className="block min-w-0">
       <span className="field-label">{label}</span>
       <input
         type="number"
-        inputMode="decimal"
+        inputMode={extra?.min !== undefined && extra.min < 0 ? 'text' : 'decimal'}
         className="field"
         value={draft[key] ?? ''}
         min={extra?.min}
@@ -147,189 +155,176 @@ export function FilterPanel({
         step={extra?.step ?? 1}
         onChange={(event) => set(key, event.target.value)}
       />
+      {extra?.hint !== undefined && hint(extra.hint)}
     </label>
   );
 
+  const textField = (key: string, label: string, placeholder?: string) => (
+    <label key={key} className="block min-w-0">
+      <span className="field-label">{label}</span>
+      <input
+        type={key === 'q' ? 'search' : 'text'}
+        className="field"
+        placeholder={placeholder}
+        value={draft[key] ?? ''}
+        onChange={(event) => set(key, event.target.value)}
+      />
+    </label>
+  );
+
+  const selectField = (
+    key: string,
+    label: string,
+    values: readonly string[],
+    names: Record<string, string>
+  ) => (
+    <label key={key} className="block min-w-0">
+      <span className="field-label">{label}</span>
+      <select
+        className="field"
+        value={draft[key] ?? ''}
+        onChange={(event) => set(key, event.target.value)}
+      >
+        <option value="">{dict.common.all}</option>
+        {values.map((value) => (
+          <option key={value} value={value}>
+            {names[value]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  const pair = (key: string, first: ReactNode, second: ReactNode) => (
+    <div key={key} className="grid grid-cols-2 gap-3">
+      {first}
+      {second}
+    </div>
+  );
+
+  /**
+   * One control per canonical key. Range pairs (price, ET) are drawn at their
+   * first key and skipped at the second, so both halves stay side by side.
+   */
+  function renderField(key: FilterFieldKey, group?: FilterGroupId): ReactNode {
+    switch (key) {
+      case 'q':
+        return textField('q', dict.filters.searchLabel, dict.filters.searchPlaceholder);
+      case 'condition':
+        return selectField('condition', dict.filters.condition, LISTING_CONDITIONS, dict.condition);
+      case 'city':
+        return textField('city', dict.filters.city, dict.filters.cityPlaceholder);
+      case 'priceMin':
+        return pair(
+          'price',
+          numberField('priceMin', dict.filters.priceFrom, { min: 0, step: 1 }),
+          numberField('priceMax', dict.filters.priceTo, { min: 0, step: 1 })
+        );
+      case 'quantity':
+        return numberField('quantity', dict.filters.quantity, { min: 1, max: 100 });
+      case 'width':
+        return numberField('width', dict.filters.width, { min: 105, max: 405 });
+      case 'aspectRatio':
+        return numberField('aspectRatio', dict.filters.aspectRatio, { min: 20, max: 95 });
+      case 'diameter':
+        return numberField('diameter', dict.filters.diameter, {
+          min: 10,
+          max: 30,
+          hint: group === 'wheelTire' ? dict.filters.diameterWheelHint : undefined,
+        });
+      case 'season':
+        return selectField('season', dict.filters.season, TIRE_SEASONS, dict.season);
+      case 'brand':
+        return textField('brand', dict.filters.brand);
+      case 'treadDepthMin':
+        return numberField('treadDepthMin', dict.filters.treadDepthFrom, {
+          min: 0,
+          max: 20,
+          step: 0.5,
+        });
+      case 'yearMin':
+        return numberField('yearMin', dict.filters.yearFrom, { min: 1980, max: 2100 });
+      case 'rimWidth':
+        return numberField('rimWidth', dict.filters.rimWidth, { min: 3, max: 16, step: 0.5 });
+      case 'boltCount':
+        return numberField('boltCount', dict.filters.boltCount, {
+          min: 3,
+          max: 10,
+          hint: dict.filters.boltCountHint,
+        });
+      case 'pcd':
+        return textField('pcd', dict.filters.pcd, '5x112');
+      case 'cb':
+        return numberField('cb', dict.filters.cb, { min: 40, max: 130, step: 0.1 });
+      case 'etMin':
+        return pair(
+          'et',
+          numberField('etMin', dict.filters.etFrom, { min: -60, max: 90 }),
+          numberField('etMax', dict.filters.etTo, { min: -60, max: 90 })
+        );
+      case 'material':
+        return selectField('material', dict.filters.material, RIM_MATERIALS, dict.material);
+      case 'priceMax':
+      case 'etMax':
+        return null;
+    }
+  }
+
   // Rendered twice (desktop sidebar and mobile drawer), so each instance needs
   // its own id — two elements sharing one id is invalid HTML.
-  const renderBody = (variant: 'desktop' | 'mobile') => (
-    <form
-      id={`${formId}-${variant}`}
-      className="space-y-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        apply();
-      }}
-    >
-      <label className="block">
-        <span className="field-label">{dict.filters.searchLabel}</span>
-        <input
-          type="search"
-          className="field"
-          placeholder={dict.filters.searchPlaceholder}
-          value={draft['q'] ?? ''}
-          onChange={(event) => set('q', event.target.value)}
-        />
-      </label>
+  const renderBody = (variant: 'desktop' | 'mobile') => {
+    const moreId = `${formId}-${variant}-more`;
+    const secondary = layout.secondary.map((key) => renderField(key));
 
-      <label className="block">
-        <span className="field-label">{dict.filters.condition}</span>
-        <select
-          className="field"
-          value={draft['condition'] ?? ''}
-          onChange={(event) => set('condition', event.target.value)}
-        >
-          <option value="">{dict.common.all}</option>
-          {LISTING_CONDITIONS.map((value) => (
-            <option key={value} value={value}>
-              {dict.condition[value]}
-            </option>
-          ))}
-        </select>
-      </label>
+    return (
+      <form
+        id={`${formId}-${variant}`}
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          apply();
+        }}
+      >
+        {layout.primary.map((group) => (
+          <fieldset key={group.id} className="min-w-0 space-y-4">
+            <legend className="eyebrow mb-1">{groupLegend(group.id, dict)}</legend>
+            {group.fields.map((key) => renderField(key, group.id))}
+          </fieldset>
+        ))}
 
-      <label className="block">
-        <span className="field-label">{dict.filters.city}</span>
-        <input
-          type="text"
-          className="field"
-          placeholder={dict.filters.cityPlaceholder}
-          value={draft['city'] ?? ''}
-          onChange={(event) => set('city', event.target.value)}
-        />
-      </label>
-
-      <div className="grid grid-cols-2 gap-3">
-        {numberField('priceMin', dict.filters.priceFrom, { min: 0, step: 1 })}
-        {numberField('priceMax', dict.filters.priceTo, { min: 0, step: 1 })}
-      </div>
-
-      {numberField('quantity', dict.filters.quantity, { min: 1, max: 100 })}
-
-      {visible.size > 0 && (
-        <fieldset className="space-y-4 border-t border-line pt-4">
-          <legend className="eyebrow mb-1">
-            {filters.category === 'ratlankiai'
-              ? dict.filters.rimSection
-              : dict.filters.tireSection}
-          </legend>
-
-          {visible.has('width') &&
-            numberField('width', dict.filters.width, { min: 105, max: 405 })}
-          {visible.has('aspectRatio') &&
-            numberField('aspectRatio', dict.filters.aspectRatio, {
-              min: 20,
-              max: 95,
-            })}
-          {visible.has('diameter') &&
-            numberField('diameter', dict.filters.diameter, { min: 10, max: 30 })}
-
-          {visible.has('season') && (
-            <label className="block">
-              <span className="field-label">{dict.filters.season}</span>
-              <select
-                className="field"
-                value={draft['season'] ?? ''}
-                onChange={(event) => set('season', event.target.value)}
-              >
-                <option value="">{dict.common.all}</option>
-                {TIRE_SEASONS.map((value) => (
-                  <option key={value} value={value}>
-                    {dict.season[value]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {visible.has('rimWidth') &&
-            numberField('rimWidth', dict.filters.rimWidth, {
-              min: 3,
-              max: 16,
-              step: 0.5,
-            })}
-          {visible.has('boltCount') &&
-            numberField('boltCount', dict.filters.boltCount, { min: 3, max: 10 })}
-
-          {visible.has('pcd') && (
-            <label className="block">
-              <span className="field-label">{dict.filters.pcd}</span>
-              <input
-                type="text"
-                className="field"
-                placeholder="5x112"
-                value={draft['pcd'] ?? ''}
-                onChange={(event) => set('pcd', event.target.value)}
-              />
-            </label>
-          )}
-
-          {visible.has('cb') &&
-            numberField('cb', dict.filters.cb, { min: 40, max: 130, step: 0.1 })}
-
-          {(visible.has('etMin') || visible.has('etMax')) && (
-            <div className="grid grid-cols-2 gap-3">
-              {numberField('etMin', dict.filters.etFrom, { min: -60, max: 90 })}
-              {numberField('etMax', dict.filters.etTo, { min: -60, max: 90 })}
+        {layout.primary.length === 0 ? (
+          secondary
+        ) : (
+          <div className="border-t border-line pt-4">
+            <button
+              type="button"
+              className="btn-ghost w-full justify-between"
+              aria-expanded={moreOpen}
+              aria-controls={moreId}
+              onClick={() => setMoreOpen((current) => !current)}
+            >
+              {dict.filters.moreFilters}
+              <span aria-hidden="true">{moreOpen ? '−' : '+'}</span>
+            </button>
+            <div id={moreId} hidden={!moreOpen} className="mt-4 space-y-4">
+              {secondary}
             </div>
-          )}
-
-          {visible.has('material') && (
-            <label className="block">
-              <span className="field-label">{dict.filters.material}</span>
-              <select
-                className="field"
-                value={draft['material'] ?? ''}
-                onChange={(event) => set('material', event.target.value)}
-              >
-                <option value="">{dict.common.all}</option>
-                {RIM_MATERIALS.map((value) => (
-                  <option key={value} value={value}>
-                    {dict.material[value]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {visible.has('brand') && (
-            <label className="block">
-              <span className="field-label">{dict.filters.brand}</span>
-              <input
-                type="text"
-                className="field"
-                value={draft['brand'] ?? ''}
-                onChange={(event) => set('brand', event.target.value)}
-              />
-            </label>
-          )}
-
-          {visible.has('treadDepthMin') &&
-            numberField('treadDepthMin', dict.filters.treadDepthFrom, {
-              min: 0,
-              max: 20,
-              step: 0.5,
-            })}
-          {visible.has('yearMin') &&
-            numberField('yearMin', dict.filters.yearFrom, {
-              min: 1980,
-              max: 2100,
-            })}
-        </fieldset>
-      )}
-
-      <div className="flex gap-2 pt-1">
-        <button type="submit" className="btn-primary flex-1">
-          {dict.common.apply}
-        </button>
-        {hasActiveFilters(filters) && (
-          <button type="button" onClick={reset} className="btn-ghost">
-            {dict.filters.reset}
-          </button>
+          </div>
         )}
-      </div>
-    </form>
-  );
+
+        <div className="flex gap-2 pt-1">
+          <button type="submit" className="btn-primary flex-1">
+            {dict.common.apply}
+          </button>
+          {hasActiveFilters(filters) && (
+            <button type="button" onClick={reset} className="btn-ghost">
+              {dict.filters.reset}
+            </button>
+          )}
+        </div>
+      </form>
+    );
+  };
 
   return (
     <>

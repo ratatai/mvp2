@@ -1,0 +1,111 @@
+[
+  {
+    "gate": "auth",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41111091139",
+    "job_id": 124253414787,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T18:57:34.5259508Z Local server_version_num: 170011",
+      "2026-10-30T18:57:34.5950731Z Applied migrations: 4 / 4",
+      "2026-10-30T18:59:05.5422791Z   3 passed (38.3s)",
+      "2026-10-30T18:59:05.6360112Z expected=3 skipped=0 unexpected=0 flaky=0",
+      "2026-10-30T18:59:05.6361268Z All three auth tests ran on desktop and passed; none skipped.",
+      "2026-10-30T18:59:33.9975790Z   4 passed (27.5s)"
+    ]
+  },
+  {
+    "gate": "isolation",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41111346800",
+    "job_id": 124254615207,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T19:01:26.7631227Z Local server_version_num: 170011",
+      "2026-10-30T19:01:26.8310685Z Applied migrations: 4 / 4",
+      "2026-10-30T19:01:39.8358462Z PASS  1. both synthetic users sign in as distinct users; catalog starts empty",
+      "2026-10-30T19:01:39.9422582Z PASS  2. owner A creates, reads and updates a draft tyre, its Storage object and image row",
+      "2026-10-30T19:01:39.9826940Z PASS  3. B and anon cannot read A's draft or its image row",
+      "2026-10-30T19:01:40.0048604Z PASS  4. B cannot update, publish or reassign A's listing, or create one as A",
+      "2026-10-30T19:01:40.0134255Z PASS  5. B cannot delete A's listing",
+      "2026-10-30T19:01:40.0326601Z PASS  6. B cannot insert, update or delete image metadata on A's listing",
+      "2026-10-30T19:01:40.1348538Z PASS  7. B cannot upload into, replace or remove A's Storage object",
+      "2026-10-30T19:01:40.1409468Z PASS  8. owner A still controls its listing after all of B's attempts",
+      "2026-10-30T19:01:40.1410372Z 8/8 checks passed (8 expected)."
+    ]
+  },
+  {
+    "gate": "seller",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41112019794",
+    "job_id": 124256283756,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T19:04:54.5249207Z Local server_version_num: 170011",
+      "2026-10-30T19:04:54.5904364Z Applied migrations: 4 / 4",
+      "2026-10-30T19:06:43.3819420Z   1 passed (50.4s)",
+      "2026-10-30T19:06:43.4573253Z Verified 1/1 passed, zero skipped, failed, flaky or retried.",
+      "2026-10-30T19:06:43.7129371Z Verified 3 archived listings in 3 categories and 6 image rows."
+    ]
+  },
+  {
+    "gate": "search",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41112099935",
+    "job_id": 124256569125,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T19:05:34.1940942Z Local server_version_num: 170011",
+      "2026-10-30T19:05:34.2899324Z Applied migrations: 4 / 4",
+      "2026-10-30T19:07:26.1254975Z   69 passed (1.1m)",
+      "2026-10-30T19:07:26.1909262Z Verified 69/69 passed, zero skipped, failed, flaky or retried."
+    ]
+  },
+  {
+    "gate": "rims",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41112195027",
+    "job_id": 124256951188,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T19:06:11.4994553Z Local server_version_num: 170011",
+      "2026-10-30T19:06:11.5618228Z Applied migrations: 4 / 4",
+      "2026-10-30T19:07:31.5879113Z   30 passed (48.0s)",
+      "2026-10-30T19:07:31.6646984Z Verified 30/30 passed, zero skipped, failed, flaky or retried."
+    ]
+  },
+  {
+    "gate": "tyres-public",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41112249685",
+    "job_id": 124257164601,
+    "status": "FAIL",
+    "evidence": [
+      "2026-10-30T19:06:32.5745200Z Local server_version_num: 170011",
+      "2026-10-30T19:06:32.6190635Z Applied migrations: 4 / 4",
+      "2026-10-30T19:07:27.7816426Z   21 passed (28.7s)",
+      "2026-10-30T19:07:27.8410763Z Verified 21/21 passed, zero skipped, failed, flaky or retried.",
+      "2026-10-30T19:10:32.6122804Z     Error: locator.fill: Test timeout of 45000ms exceeded.",
+      "2026-10-30T19:10:32.6125535Z           - element is not visible",
+      "2026-10-30T19:10:32.6126621Z           - element is not visible",
+      "2026-10-30T19:10:32.6127726Z            - element is not visible",
+      "2026-10-30T19:10:32.6134180Z     Error: locator.fill: Test timeout of 45000ms exceeded.",
+      "2026-10-30T19:10:32.6137271Z           - element is not visible",
+      "2026-10-30T19:10:32.6138156Z           - element is not visible",
+      "2026-10-30T19:10:32.6138932Z            - element is not visible",
+      "2026-10-30T19:10:32.6144152Z     Error: locator.fill: Test timeout of 45000ms exceeded.",
+      "2026-10-30T19:10:32.6145981Z           - element is not visible",
+      "2026-10-30T19:10:32.6146776Z           - element is not visible",
+      "2026-10-30T19:10:32.6147476Z            - element is not visible",
+      "2026-10-30T19:10:32.6151944Z   3 failed",
+      "2026-10-30T19:10:32.6154511Z   117 passed (3.1m)",
+      "2026-10-30T19:10:32.6402877Z ##[error]Process completed with exit code 1."
+    ]
+  },
+  {
+    "gate": "wheels",
+    "run_url": "https://github.com/ratatai/mvp2/actions/runs/41112308572",
+    "job_id": 124257385682,
+    "status": "PASS",
+    "evidence": [
+      "2026-10-30T19:06:49.3952081Z Local server_version_num: 170011",
+      "2026-10-30T19:06:49.4586680Z Applied migrations: 4 / 4",
+      "2026-10-30T19:08:13.1904464Z   30 passed (49.1s)",
+      "2026-10-30T19:08:13.2646406Z Verified 30/30 passed, zero skipped, failed, flaky or retried."
+    ]
+  }
+]

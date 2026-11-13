@@ -1,12 +1,17 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { DEFAULT_LOCALE } from '@/i18n/config';
+import { localeFromPathname } from '@/i18n/config';
 import { getDictionary } from '@/i18n';
 
 /**
  * Error boundary.
+ *
+ * Like the not-found boundary, it gets no route params, so the language comes
+ * from the first path segment; an unknown or missing one falls back to
+ * Lithuanian.
  *
  * The visitor never sees the underlying message: Next.js already strips it in
  * production, and this component does not render `error.message` at all.
@@ -18,7 +23,7 @@ export default function LocaleError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const dict = getDictionary(DEFAULT_LOCALE);
+  const dict = getDictionary(localeFromPathname(usePathname()));
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {

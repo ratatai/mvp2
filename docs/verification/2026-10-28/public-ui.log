@@ -1,0 +1,50 @@
+PASS localized browser 404: /lt/missing-page
+PASS localized browser 404: /lt/missing/deep/page
+PASS localized browser 404: /lt/skelbimai/missing
+PASS localized browser 404: /lt/skelbimai/padangos/missing
+PASS localized browser 404: /lt/skelbimai/ratlankiai/missing
+PASS localized browser 404: /lt/skelbimai/komplektiniai-ratai/missing
+PASS public form: /lt/prisijungti
+PASS public form: /lt/registracija
+PASS public form: /lt/slaptazodzio-atkurimas
+PASS no overflow: lt/ at 320px
+PASS no overflow: lt/prisijungti at 320px
+PASS no overflow: lt/ at 375px
+PASS no overflow: lt/prisijungti at 375px
+PASS no overflow: lt/ at 1440px
+PASS no overflow: lt/prisijungti at 1440px
+PASS localized browser 404: /ru/missing-page
+PASS localized browser 404: /ru/missing/deep/page
+PASS localized browser 404: /ru/skelbimai/missing
+PASS localized browser 404: /ru/skelbimai/padangos/missing
+PASS localized browser 404: /ru/skelbimai/ratlankiai/missing
+PASS localized browser 404: /ru/skelbimai/komplektiniai-ratai/missing
+PASS public form: /ru/prisijungti
+PASS public form: /ru/registracija
+PASS public form: /ru/slaptazodzio-atkurimas
+PASS no overflow: ru/ at 320px
+PASS no overflow: ru/prisijungti at 320px
+PASS no overflow: ru/ at 375px
+PASS no overflow: ru/prisijungti at 375px
+PASS no overflow: ru/ at 1440px
+PASS no overflow: ru/prisijungti at 1440px
+PASS localized browser 404: /en/missing-page
+PASS localized browser 404: /en/missing/deep/page
+PASS localized browser 404: /en/skelbimai/missing
+PASS localized browser 404: /en/skelbimai/padangos/missing
+PASS localized browser 404: /en/skelbimai/ratlankiai/missing
+PASS localized browser 404: /en/skelbimai/komplektiniai-ratai/missing
+PASS public form: /en/prisijungti
+PASS public form: /en/registracija
+PASS public form: /en/slaptazodzio-atkurimas
+PASS no overflow: en/ at 320px
+PASS no overflow: en/prisijungti at 320px
+PASS no overflow: en/ at 375px
+PASS no overflow: en/prisijungti at 375px
+PASS no overflow: en/ at 1440px
+PASS no overflow: en/prisijungti at 1440px
+PASS mobile menu: Tab wraps both ways
+PASS mobile menu: Escape and focus return
+PASS mobile menu: close and focus return
+PASS mobile menu: widening restores scrolling
+{"mode":"public-ui-without-database","passed":49,"failed":0,"skipped":0,"browser":"153.0.8010.0"}

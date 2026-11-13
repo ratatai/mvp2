@@ -17,6 +17,7 @@ import {
   LOCALES,
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  REQUEST_LOCALE_HEADER,
   isLocale,
   matchLocale,
 } from '@/i18n/config';
@@ -37,14 +38,22 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
-    pathname.startsWith('/auth/callback') ||
-    PUBLIC_FILE.test(pathname)
+    pathname.startsWith('/auth/callback')
   ) {
     return NextResponse.next();
   }
 
   const segments = pathname.split('/').filter((segment) => segment.length > 0);
   const first = segments[0];
+
+  // Global 404s have no route params. Forward the URL locale even for a
+  // missing file under a locale prefix, which otherwise skips session refresh.
+  if (isLocale(first)) {
+    request.headers.set(REQUEST_LOCALE_HEADER, first);
+  }
+  if (PUBLIC_FILE.test(pathname)) {
+    return NextResponse.next({ request });
+  }
 
   // ---- 1. Locale prefix ---------------------------------------------------
   if (!isLocale(first)) {
@@ -123,6 +132,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/:locale(lt|ru|en)/:path*',
     /*
      * Everything except static files and image optimisation, so that the
      * locale redirect and the session refresh apply to real pages only.

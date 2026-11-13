@@ -197,6 +197,92 @@ describe('wheelSpecsSchema', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Numeric range boundaries                                                    */
+/* -------------------------------------------------------------------------- */
+
+// Inclusive limits from the schema: tire width 105–405 (no 305 cap), rim ET
+// -60–90, centre bore 40–130, rim width 3–16. Each limit is checked on both
+// sides, flat and inside a complete wheel, and a rejection must name the field.
+
+const tireWidthCases: ReadonlyArray<readonly [number, boolean]> = [
+  [104, false],
+  [105, true],
+  [355, true],
+  [375, true],
+  [405, true],
+  [406, false],
+];
+
+const rimBoundaryCases: ReadonlyArray<
+  readonly ['et' | 'cb' | 'rim_width', number, boolean]
+> = [
+  ['et', -61, false],
+  ['et', -60, true],
+  ['et', 90, true],
+  ['et', 91, false],
+  ['cb', 39.9, false],
+  ['cb', 40, true],
+  ['cb', 130, true],
+  ['cb', 130.1, false],
+  ['rim_width', 2.9, false],
+  ['rim_width', 3, true],
+  ['rim_width', 16, true],
+  ['rim_width', 16.1, false],
+];
+
+function issuePaths(error: { issues: ReadonlyArray<{ path: PropertyKey[] }> }) {
+  return error.issues.map((issue) => issue.path.join('.'));
+}
+
+describe('numeric range boundaries', () => {
+  it.each(tireWidthCases)(
+    'tire width %d → accepted: %s',
+    (width, accepted) => {
+      const result = tireSpecsSchema.safeParse({ ...validTire, width });
+      expect(result.success).toBe(accepted);
+      if (!result.success) expect(issuePaths(result.error)).toEqual(['width']);
+    }
+  );
+
+  it.each(tireWidthCases)(
+    'complete wheel tire.width %d → accepted: %s',
+    (width, accepted) => {
+      const result = wheelSpecsSchema.safeParse({
+        ...validWheel,
+        tire: { ...validWheel.tire, width },
+      });
+      expect(result.success).toBe(accepted);
+      if (!result.success) {
+        expect(issuePaths(result.error)).toEqual(['tire.width']);
+      }
+    }
+  );
+
+  it.each(rimBoundaryCases)(
+    'rim %s %d → accepted: %s',
+    (field, value, accepted) => {
+      const result = rimSpecsSchema.safeParse({ ...validRim, [field]: value });
+      expect(result.success).toBe(accepted);
+      if (!result.success) expect(issuePaths(result.error)).toEqual([field]);
+    }
+  );
+
+  it.each(rimBoundaryCases)(
+    'complete wheel rim.%s %d → accepted: %s',
+    (field, value, accepted) => {
+      const result = wheelSpecsSchema.safeParse({
+        ...validWheel,
+        rim: { ...validWheel.rim, [field]: value },
+      });
+      expect(result.success).toBe(accepted);
+      if (!result.success) {
+        expect(issuePaths(result.error)).toEqual([`rim.${field}`]);
+      }
+    }
+  );
+});
+
+/* -------------------------------------------------------------------------- */
 /* Cross-category confusion                                                    */
 /* -------------------------------------------------------------------------- */
 

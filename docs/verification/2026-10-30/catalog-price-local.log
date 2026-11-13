@@ -1,0 +1,4 @@
+PASS 1440px: hidden price -> expand -> visible -> submit -> category/query retained after reload
+PASS 393px: hidden price -> expand -> visible -> submit -> category/query retained after reload
+PASS 320px: hidden price -> expand -> visible -> submit -> category/query retained after reload
+3/3 corrected price interactions passed; read-only, no database configured

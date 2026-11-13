@@ -1,0 +1,44 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> ratatai-marketplace@1.0.0 test
+> vitest run tests/unit/listing-jsonld-security.test.ts
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 /workspace/scratch/85c0bf4e856b/mvp2
+
+ ❯ tests/unit/listing-jsonld-security.test.ts (2 tests | 2 failed) 47ms
+   ❯ listing structured data HTML boundary (2)
+     × keeps a closing script tag in title inside the JSON payload 42ms
+     × keeps a closing script tag in description inside the JSON payload 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/listing-jsonld-security.test.ts > listing structured data HTML boundary > keeps a closing script tag in title inside the JSON payload
+ FAIL  tests/unit/listing-jsonld-security.test.ts > listing structured data HTML boundary > keeps a closing script tag in description inside the JSON payload
+AssertionError: expected [ '<script', '<script' ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ tests/unit/listing-jsonld-security.test.ts:26:41
+     24|       repo.fetchListingBySlug.mockResolvedValue({ ok: true, data: { li…
+     25|       const html = renderToStaticMarkup(await ListingPage({ params: Pr…
+     26|       expect(html.match(/<script\b/gi)).toHaveLength(1);
+       |                                         ^
+     27|       const json = html.match(/<script type="application\/ld\+json">([…
+     28|       expect(json).toBeDefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  15:05:56
+   Duration  491ms (import 55%, transform 25%, tests 18%, worker 2%)
+

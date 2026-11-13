@@ -15,7 +15,7 @@ import type {
   TireSpecs,
   WheelSpecs,
 } from '@/domain/listing.contract';
-import { formatRimSize, formatTireSize } from '@/domain/listing.validation';
+import { formatTireSize } from '@/domain/listing.validation';
 
 export interface SpecRow {
   readonly label: string;
@@ -98,7 +98,7 @@ export function rimSpecRows(
   return compact([
     row(s.brand, specs.brand),
     row(s.model, specs.model),
-    row(s.size, formatRimSize(specs)),
+    row(s.size, `${formatNumber(specs.rim_width, locale)}Jx${specs.diameter} ET${specs.et}`),
     row(s.diameter, `R${specs.diameter}`),
     row(s.rim_width, `${formatNumber(specs.rim_width, locale)}J`),
     row(s.pcd, specs.pcd),
@@ -176,7 +176,8 @@ export function listingSpecGroups(
  */
 export function listingCardSummary(
   listing: Listing,
-  dict: Dictionary
+  dict: Dictionary,
+  locale: Locale
 ): readonly string[] {
   switch (listing.category) {
     case 'padangos': {
@@ -184,7 +185,7 @@ export function listingCardSummary(
       return compactStrings([
         formatTireSize(specs),
         dict.season[specs.season],
-        specs.tread_depth === undefined ? null : `${specs.tread_depth} mm`,
+        specs.tread_depth === undefined ? null : formatMeasure(specs.tread_depth, 'mm', locale),
       ]);
     }
     case 'ratlankiai': {

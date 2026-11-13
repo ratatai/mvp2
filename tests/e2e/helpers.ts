@@ -141,10 +141,14 @@ export async function countListings(page: Page): Promise<number> {
  */
 export async function openFilterForm(page: Page): Promise<Locator> {
   const trigger = page.getByRole('button', { name: new RegExp(LT.filtersOpen) });
+  const drawer = page.getByRole('dialog', { name: LT.filtersTitle });
+
+  // The drawer can still be open (e.g. after Back/Forward); its backdrop
+  // covers the trigger, so reuse it instead of clicking underneath.
+  if (await drawer.isVisible()) return drawer;
 
   if (await trigger.isVisible()) {
     await trigger.click();
-    const drawer = page.getByRole('dialog', { name: LT.filtersTitle });
     await expect(drawer).toBeVisible();
     return drawer;
   }
