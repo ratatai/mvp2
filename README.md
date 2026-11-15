@@ -76,9 +76,9 @@ no listings can still hold real Auth users and profiles.
 
 | Starting point | Recognised by | Supported path |
 |---|---|---|
-| Fresh database | no `public.profiles`, `public.listings`, `public.listing_images` | `001` → `002` |
-| `seller_id` legacy (old lean MVP) | `public.listings.seller_id` exists | `000` → `001` → `002` |
-| August `user_id` legacy | `listings.user_id`, `profiles.full_name`, `profiles.username`, `profiles.is_dealer`, and **no** `profiles.phone_is_public` | reconcile migration only, via [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) |
+| Fresh database | no `public.profiles`, `public.listings`, `public.listing_images` | `001` → `002` → phone-default migration |
+| `seller_id` legacy (old lean MVP) | `public.listings.seller_id` exists | `000` → `001` → `002` → phone-default migration |
+| August `user_id` legacy | `listings.user_id`, `profiles.full_name`, `profiles.username`, `profiles.is_dealer`, and **no** `profiles.phone_is_public` | reconcile → phone-default migration, subject to separate approval; see [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) |
 
 Read-only check:
 
@@ -99,13 +99,14 @@ Hosted project: run in Supabase Dashboard → **SQL Editor** → New query, in o
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_security_hardening.sql`
+3. `supabase/migrations/20261115091209_seller_phone_private_by_default.sql`
 
 Local stack: `supabase db reset` applies every file in filename order. `000`
 finds no `seller_id` and does nothing, `001` and `002` create the canonical
-schema, and `20260929144644_reconcile_august_schema_to_canonical.sql` detects
-the canonical schema, verifies it and changes nothing. (Earlier local runs of
-this path were reported but are not reproduced in this repository; see the
-runbook.)
+schema, and `20260929144644_reconcile_august_schema_to_canonical.sql` verifies
+the canonical schema with the original `true` column default and changes
+nothing. The phone-default migration then sets the default to `false` for new
+profiles without updating existing rows.
 
 ### A project that already ran the old lean-MVP (`seller_id`) migrations
 
@@ -116,6 +117,7 @@ and no `DELETE`.
 1. `supabase/migrations/000_legacy_compatibility.sql`
 2. `supabase/migrations/001_initial_schema.sql`
 3. `supabase/migrations/002_security_hardening.sql`
+4. `supabase/migrations/20261115091209_seller_phone_private_by_default.sql`
 
 Afterwards you can inspect the archived rows with `select * from public.legacy_listings;`
 and drop those tables yourself once you no longer need them.
@@ -127,7 +129,7 @@ and drop those tables yourself once you no longer need them.
 `public.handle_new_user()` and add a second signup trigger before failing at the
 `listing_sellers` view (`moderation_status` does not exist).
 
-The only supported path is
+The only supported conversion is
 `supabase/migrations/20260929144644_reconcile_august_schema_to_canonical.sql`,
 applied exactly as described in [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md),
 after a written owner decision. It runs as one atomic block and aborts on any
@@ -146,6 +148,10 @@ unrecognised structure or failed precondition.
 - The legacy path has only been executed on a restored clone (reported, not
   re-run here). It cannot be reproduced from this repository, because the source
   August schema backup is not tracked.
+
+The later phone-default migration must not run before reconcile. It changes
+only the default for new profiles; it does **not** make migrated profiles
+private or resolve the owner decision on publishing existing phone numbers.
 
 ### Optional demo data
 

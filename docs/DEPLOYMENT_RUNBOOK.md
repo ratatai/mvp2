@@ -61,6 +61,15 @@ schema becomes public. Options:
   listing can be approved;
 - (c) do not deploy until a consent flow exists.
 
+The candidate's later migration,
+[`20261115091209_seller_phone_private_by_default.sql`](../supabase/migrations/20261115091209_seller_phone_private_by_default.sql),
+is a separate step, not option (b). Reconcile checks the original column default
+of `true`; only after reconcile and its postconditions may the separately
+approved default change be applied. It changes the default to `false` for new
+profiles and leaves all existing rows unchanged, including migrated rows that
+reconcile marked public. Do not re-run reconcile to verify the final default:
+its canonical assertion deliberately expects `true`, not `false`.
+
 ## 2. Owner decision (required before production)
 
 Record the following in writing, signed off by the owner:
