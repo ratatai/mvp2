@@ -35,7 +35,7 @@ export default async function ProfilePage({
     : {
         displayName: null,
         phone: null,
-        phoneIsPublic: true,
+        phoneIsPublic: false,
         city: null,
         preferredLanguage: locale,
       };
