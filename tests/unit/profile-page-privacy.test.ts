@@ -22,10 +22,11 @@ describe('profile page phone visibility', () => {
     return checkbox ?? '';
   }
 
-  it('leaves the checkbox unchecked when the stored profile is unavailable', async () => {
-    repository.fetchOwnProfile.mockResolvedValue({ ok: false, error: 'unavailable' });
+  it.each(['unavailable', 'not_found'])('does not render an editable form on %s', async (error) => {
+    repository.fetchOwnProfile.mockResolvedValue({ ok: false, error });
 
-    expect(await checkboxMarkup()).not.toMatch(/\bchecked=""/);
+    await expect(ProfilePage({ params: Promise.resolve({ locale: 'lt' }) }))
+      .rejects.toThrow('Profile unavailable');
   });
 
   it.each([true, false])('preserves a loaded visibility preference of %s', async (phoneIsPublic) => {

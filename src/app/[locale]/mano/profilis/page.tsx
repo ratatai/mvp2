@@ -30,22 +30,15 @@ export default async function ProfilePage({
   const dict = getDictionary(locale);
   const result = await fetchOwnProfile(user.id);
 
-  const profile = result.ok
-    ? result.data
-    : {
-        displayName: null,
-        phone: null,
-        phoneIsPublic: false,
-        city: null,
-        preferredLanguage: locale,
-      };
+  // An editable fallback could overwrite the stored profile with empty values.
+  if (!result.ok) throw new Error('Profile unavailable');
 
   return (
     <div className="shell max-w-xl py-8 sm:py-10">
       <h1 className="text-3xl">{dict.profile.title}</h1>
       <p className="mb-6 mt-2 text-sm text-ink-muted">{dict.profile.subtitle}</p>
       <div className="card p-6">
-        <ProfileForm profile={profile} dict={dict} />
+        <ProfileForm profile={result.data} dict={dict} />
       </div>
     </div>
   );
